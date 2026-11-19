@@ -33,7 +33,7 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
     }
   }, [active, load]);
 
-  const run = async (label: string, fn: () => Promise<string>, ok: string) => {
+  const run = async (label: string, fn: () => Promise<string>, ok: string, after?: () => void) => {
     setBusy(label);
     setMsg({});
     try {
@@ -44,6 +44,7 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
         () => false,
       );
       setMsg(inBlock ? { ok } : { ok: `Sent, not in a block yet: refresh in a while. ${ok}` });
+      after?.();
       await reloadAccounts(node, session).catch(() => undefined);
       await load();
     } catch (e) {
@@ -58,6 +59,41 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
   const validId = /^[a-z0-9]{4,32}$/.test(newId);
   const taken = items.some((i) => i.id === newId);
 
+  //newest first; an escrow whose payments were all claimed needs no decision any more
+  const isDone = (id: string) => (uses.get(id)?.length ?? 0) > 0 && uses.get(id)!.every((c) => c.open <= 0n);
+  const newest = [...items].reverse();
+  const openOnes = newest.filter((i) => !isDone(i.id));
+  const finished = newest.filter((i) => isDone(i.id));
+
+  //a plain function, not a component: a component made inside would mount anew on every render
+  const escrowRow = (id: string, d: DecisionState, done = false) => (
+      <div key={id} className="card" style={{ padding: 12 }}>
+              <div className="item">
+                <div>
+                  <b>{id}</b>{' '}
+                  <button className="link" style={{ fontSize: 12 }} onClick={() => copyText(id)}>
+                    copy
+                  </button>
+                  <div className="meta">{d.exists ? (d.value !== undefined && d.value in valueNames ? valueNames[d.value] : 'unknown value') : 'not found'}</div>
+                  <Payments list={uses.get(id)} />
+                </div>
+                <div className="row" hidden={done}>
+                  <button disabled={!!busy || d.value === 1} onClick={() => run(`r${id}`, () => setDecision(node, session, id, 1), `Escrow "${id}": released. The recipient can claim now.`)}>
+                    {busy === `r${id}` ? 'Saving...' : 'Release'}
+                  </button>
+                  <button disabled={!!busy || d.value === 2} onClick={() => run(`f${id}`, () => setDecision(node, session, id, 2), `Escrow "${id}": refunded. The sender can take it back now.`)}>
+                    {busy === `f${id}` ? 'Saving...' : 'Refund'}
+                  </button>
+                  {d.value !== 0 && (
+                    <button className="small" disabled={!!busy} onClick={() => run(`o${id}`, () => setDecision(node, session, id, 0), `Escrow "${id}" is open again.`)}>
+                      Reopen
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+  );
+
   return (
     <div className="stack">
       <section className="card">
@@ -69,7 +105,7 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
         <div className="row">
           <input value={newId} onChange={(e) => setNewId(e.target.value.toLowerCase().trim())} placeholder="e.g. order42" spellCheck={false} style={{ width: 200 }} />
           <button onClick={suggest}>Suggest one</button>
-          <button className="primary" disabled={!validId || taken || !!busy} onClick={() => run('create', () => createDecision(node, session, newId), `Escrow "${newId}" is ready. Give the sender your username "${session.username}" and the id "${newId}".`)}>
+          <button className="primary" disabled={!validId || taken || !!busy} onClick={() => run('create', () => createDecision(node, session, newId), `Escrow "${newId}" is ready. Give the sender your username "${session.username}" and the id "${newId}".`, () => setNewId(''))}>
             {busy === 'create' ? 'Creating...' : 'Create'}
           </button>
           {fee > 0n && <span className="muted">costs {formatAmount(fee, 6)} NXS (a name)</span>}
@@ -89,34 +125,16 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
         </h2>
         {items.length === 0 && !loading && <p className="muted">None yet.</p>}
         <div className="list">
-          {items.map(({ id, d }) => (
-            <div key={id} className="card" style={{ padding: 12 }}>
-              <div className="item">
-                <div>
-                  <b>{id}</b>{' '}
-                  <button className="link" style={{ fontSize: 12 }} onClick={() => copyText(id)}>
-                    copy
-                  </button>
-                  <div className="meta">{d.exists ? (d.value !== undefined && d.value in valueNames ? valueNames[d.value] : 'unknown value') : 'not found'}</div>
-                  <Payments list={uses.get(id)} />
-                </div>
-                <div className="row">
-                  <button disabled={!!busy || d.value === 1} onClick={() => run(`r${id}`, () => setDecision(node, session, id, 1), `Escrow "${id}": released. The recipient can claim now.`)}>
-                    {busy === `r${id}` ? 'Saving...' : 'Release'}
-                  </button>
-                  <button disabled={!!busy || d.value === 2} onClick={() => run(`f${id}`, () => setDecision(node, session, id, 2), `Escrow "${id}": refunded. The sender can take it back now.`)}>
-                    {busy === `f${id}` ? 'Saving...' : 'Refund'}
-                  </button>
-                  {d.value !== 0 && (
-                    <button className="small" disabled={!!busy} onClick={() => run(`o${id}`, () => setDecision(node, session, id, 0), `Escrow "${id}" is open again.`)}>
-                      Reopen
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+          {openOnes.map(({ id, d }) => escrowRow(id, d))}
         </div>
+        {finished.length > 0 && (
+          <details className="spaced">
+            <summary className="muted">Finished: the payment was claimed ({finished.length})</summary>
+            <div className="list spaced">
+              {finished.map(({ id, d }) => escrowRow(id, d, true))}
+            </div>
+          </details>
+        )}
         <p className="muted spaced" style={{ fontSize: 12 }}>
           A decision can be changed until someone claims; after a claim the payment has moved and the decision no longer matters. Use one id per deal.
         </p>
