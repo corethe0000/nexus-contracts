@@ -167,15 +167,34 @@ const addressOf = (v: unknown) => (typeof v === 'object' && v ? (v as { address?
 
 const tokenCache = new Map<string, { decimals: number; ticker: string }>();
 async function tokenOf(node: NexusNode, account: string): Promise<{ token: string; decimals: number; ticker: string }> {
-  const st = await node.accountState(account).catch(() => null);
-  if (!st) {
-    return { token: '0', decimals: 6, ticker: 'NXS' };
-  }
+  //no guessing: a wrong number of decimals would scale the amount
+  const st = await node.accountState(account);
   if (!tokenCache.has(st.token)) {
     const t = st.token === '0' ? null : await node.call<any>('register/get/any', { address: st.token }).catch(() => null);
     tokenCache.set(st.token, { decimals: st.decimals, ticker: st.token === '0' ? 'NXS' : String(t?.ticker ?? t?.name ?? 'token') });
   }
   return { token: st.token, ...tokenCache.get(st.token)! };
+}
+
+//a contract is vec(operation) vec(condition) vec(register); DEBIT = op byte, from 32, to 32, amount u64 LE
+function debitAmount(contract: Uint8Array): bigint {
+  const first = contract[0]!;
+  const start = first < 253 ? 1 : 3;
+  let v = 0n;
+  for (let i = 7; i >= 0; i--) {
+    v = (v << 8n) | BigInt(contract[start + 65 + i]!);
+  }
+  return v;
+}
+
+function decimalToBase(v: unknown, decimals: number): bigint {
+  const t = typeof v === 'number' ? v.toFixed(decimals) : String(v ?? '0');
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(t.trim());
+  if (!m) {
+    return 0n;
+  }
+  const frac = (m[2] ?? '').slice(0, decimals).padEnd(decimals, '0');
+  return BigInt(m[1]!) * 10n ** BigInt(decimals) + BigInt(frac || '0');
 }
 
 /** Every DEBIT with a condition in one transaction */
@@ -200,9 +219,10 @@ export async function readContracts(node: NexusNode, txid: string): Promise<Chai
     }
     const from = addressOf(c.from);
     const { token, decimals, ticker } = await tokenOf(node, from);
-    const unit = 10 ** decimals;
-    const amount = BigInt(Math.round(Number(c.amount ?? 0) * unit));
-    const claimed = BigInt(Math.round(Number(c.claimed ?? 0) * unit));
+    //the exact amount from the DEBIT itself; the node's decimal "claimed" goes through text, not float math
+    const amount = bytes ? debitAmount(bytes) : decimalToBase(c.amount, decimals);
+    const claimedRaw = decimalToBase(c.claimed ?? 0, decimals);
+    const claimed = claimedRaw > amount ? amount : claimedRaw;
     out.push({ txid, contract: c.id, time: tx.timestamp, sender: parsed.genesis, from, to: addressOf(c.to), token, ticker, amount, open: amount - claimed, decimals, condition, kind: condition ? contractKind(condition) : 'contract', conditionBytes: Uint8Array.from(cond) });
   }
   return out;

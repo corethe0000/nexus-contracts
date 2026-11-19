@@ -62,7 +62,15 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
           }
         }
       }
-      const list = all.map((r) => ({ ...r, status: contractStatus(r.c, session.genesis, t, decisions, ids) }));
+      const myAccounts = new Set(session.accounts.map((a) => a.address));
+      //one odd contract (anyone can send one) must not take the whole list down
+      const list = all.flatMap((r) => {
+        try {
+          return [{ ...r, status: contractStatus(r.c, session.genesis, t, decisions, ids, myAccounts) }];
+        } catch {
+          return [];
+        }
+      });
       list.sort((a, b) => Number(b.status.canClaim) - Number(a.status.canClaim) || b.c.time - a.c.time);
       setRows(list);
       setNow(t);
@@ -114,8 +122,12 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
     setActing(key);
     try {
       const tx = await claim(node, session, r.c, into);
-      setDone((d) => ({ ...d, [key]: `Done, transaction ${shortId(tx)}` }));
-      await node.waitConfirmed(tx, 1, 180000).catch(() => undefined);
+      setDone((d) => ({ ...d, [key]: `Sent (transaction ${shortId(tx)}), waiting for the next block...` }));
+      const ok = await node.waitConfirmed(tx, 1, 180000).then(
+        () => true,
+        () => false,
+      );
+      setDone((d) => ({ ...d, [key]: ok ? `Done, transaction ${shortId(tx)} is in a block` : `Sent (transaction ${shortId(tx)}), not in a block yet: refresh in a while` }));
       await load();
     } catch (e) {
       const m = errorText(e);
@@ -211,6 +223,7 @@ function ContractRow({ r, session, acting, result, onAct }: { r: Row; session: S
         </div>
         <div className="row">
           {status.closed && <span className="pill done">finished</span>}
+          {!status.closed && status.broken && <span className="pill">cannot be claimed: escrow register missing</span>}
           {!status.closed && status.canClaim && (
             <button className="primary" disabled={acting === key} onClick={() => onAct(r)}>
               {acting === key ? 'Sending...' : iAmSender ? 'Take back' : 'Claim'}
@@ -221,7 +234,7 @@ function ContractRow({ r, session, acting, result, onAct }: { r: Row; session: S
               {acting === key ? 'Sending...' : 'Try to claim'}
             </button>
           )}
-          {!status.closed && !status.canClaim && !status.maybe && <span className={`pill ${status.waiting.length ? 'wait' : 'done'}`}>{status.waiting.length ? `waiting: ${[...new Set(status.waiting)].join(', ')}` : iAmSender ? 'for the recipient' : 'not for you'}</span>}
+          {!status.closed && !status.broken && !status.canClaim && !status.maybe && <span className={`pill ${status.waiting.length ? 'wait' : 'done'}`}>{status.waiting.length ? `waiting: ${[...new Set(status.waiting)].join(', ')}` : iAmSender ? 'for the recipient' : 'not for you'}</span>}
         </div>
       </div>
       {result && <div className="note spaced">{result}</div>}

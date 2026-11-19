@@ -11,9 +11,11 @@ export interface ContractStatus {
   maybe: boolean; //a way for me depends on parts only the core can check
   waiting: string[]; //what my ways still wait for
   closed: boolean; //nothing left to claim
+  broken: boolean; //can never be claimed (a register it reads is missing)
 }
 
-export const fmtTime = (t: number) => new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+//beyond the date range (anyone can put any number in a contract) the plain number is shown
+export const fmtTime = (t: number) => (Math.abs(t) > 8.64e12 ? `time ${t}` : new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
 
 export function decisionKey(arbiter: string, id: string) {
   return `${arbiter}/${id}`;
@@ -37,11 +39,17 @@ function checkBlock(b: Block, me: string, now: number, decisions: Map<string, De
   }
 }
 
-export function contractStatus(c: ChainContract, me: string, now: number, decisions: Map<string, DecisionState>, escrowIds: { arbiter: string; id: string }[]): ContractStatus {
+//a claim goes into the claimer's own account: a way without a "who" block is open to the owner of the receiving
+//account and to the sender only. A missing decision register fails every way (the core reads every part).
+export function contractStatus(c: ChainContract, me: string, now: number, decisions: Map<string, DecisionState>, escrowIds: { arbiter: string; id: string }[], myAccounts: Set<string>): ContractStatus {
   const ways = c.condition ? toWays(c.condition, decisionIds(escrowIds)) : [];
+  const canReceive = c.sender === me || myAccounts.has(c.to);
+  const missing = ways.flat().some((b) => b.kind === 'decision' && decisions.get(decisionKey(b.arbiter, b.id))?.exists === false);
   const checks: WayCheck[] = ways.map((way) => {
-    let mine = false;
-    let ready: WayCheck['ready'] = 'yes';
+    const hasWho = way.some((b) => b.kind === 'who');
+    const codeWho = way.some((b) => b.kind === 'code' && /caller\.genesis/.test(b.text));
+    let mine = !hasWho && canReceive;
+    let ready: WayCheck['ready'] = codeWho ? 'maybe' : 'yes';
     const waiting: string[] = [];
     for (const b of way) {
       const r = checkBlock(b, me, now, decisions);
@@ -57,7 +65,11 @@ export function contractStatus(c: ChainContract, me: string, now: number, decisi
         ready = 'maybe';
       }
     }
-    return { way, mine, ready, waiting };
+    if (missing) {
+      ready = 'no';
+      waiting.push('ended: the escrow register is missing, so the chain refuses every claim');
+    }
+    return { way, mine: mine && canReceive, ready, waiting };
   });
   const minez = checks.filter((w) => w.mine);
   const closed = c.open <= 0n;
@@ -68,6 +80,7 @@ export function contractStatus(c: ChainContract, me: string, now: number, decisi
     //a way that has ended for good ("ended ...") is not something to wait for
     waiting: minez.flatMap((w) => w.waiting).filter((x) => !x.startsWith('ended')),
     closed,
+    broken: missing,
   };
 }
 

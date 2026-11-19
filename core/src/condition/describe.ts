@@ -9,6 +9,9 @@ export type Labels = Record<string, string>;
 const short = (s: string) => (s.length > 16 ? `${s.slice(0, 8)}...${s.slice(-6)}` : s);
 
 function when(seconds: bigint): string {
+  if (seconds > 8640000000000n) {
+    return `time ${seconds}`;
+  }
   return new Date(Number(seconds) * 1000).toISOString().replace('T', ' ').replace(/:00\.000Z$/, ' UTC').replace(/\.000Z$/, ' UTC');
 }
 
@@ -133,7 +136,9 @@ function sentence(w: Condition, x: Ctx): string {
     x,
   );
   if (who.length !== 1) {
-    return `Anyone it allows can claim${rest.length ? ` ${rest.join(' and ')}` : ''}`;
+    //a claim goes into the claimer's own account: without a who part only the recipient or the sender can use it
+    const subject = who.length === 0 ? `The recipient or ${x.sender && x.labels[x.sender] === 'You' ? 'you' : 'the sender'}` : 'Anyone it allows';
+    return `${subject} can claim${rest.length ? ` ${rest.join(' and ')}` : ''}`;
   }
   const g = hexOfMemory(who[0]!.right.bytes);
   const name = value(who[0]!.right, x.labels);

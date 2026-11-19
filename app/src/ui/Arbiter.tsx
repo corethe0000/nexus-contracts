@@ -35,8 +35,12 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
     setMsg({});
     try {
       const tx = await fn();
-      await node.waitConfirmed(tx, 1, 180000).catch(() => undefined);
-      setMsg({ ok });
+      setMsg({ ok: `Sent (transaction ${tx.slice(0, 8)}...), waiting for the next block...` });
+      const inBlock = await node.waitConfirmed(tx, 1, 180000).then(
+        () => true,
+        () => false,
+      );
+      setMsg(inBlock ? { ok } : { ok: `Sent, not in a block yet: refresh in a while. ${ok}` });
       await reloadAccounts(node, session).catch(() => undefined);
       await load();
     } catch (e) {

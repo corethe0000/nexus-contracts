@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import { findPerson, type Person, type Session } from '../lib/chain';
 
@@ -7,6 +7,9 @@ export const shortId = (s: string) => (s.length > 16 ? `${s.slice(0, 6)}...${s.s
 
 //<input type="datetime-local"> works in local time without seconds
 export function toLocalInput(seconds: number): string {
+  if (seconds > 8.64e12) {
+    return '';
+  }
   const d = new Date(seconds * 1000);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -17,9 +20,25 @@ export function fromLocalInput(v: string): number {
   return Number.isFinite(t) ? Math.floor(t / 1000) : 0;
 }
 
+//empty or half typed values are ignored, so backspacing one part does not wipe the time (optional times have a
+//Clear button)
 export function TimeInput({ value, onChange }: { value: number; onChange: (t: number) => void }) {
-  return <input type="datetime-local" value={value ? toLocalInput(value) : ''} onChange={(e) => onChange(fromLocalInput(e.target.value))} />;
+  return (
+    <input
+      type="datetime-local"
+      value={value ? toLocalInput(value) : ''}
+      onChange={(e) => {
+        const t = fromLocalInput(e.target.value);
+        if (t > 0) {
+          onChange(t);
+        }
+      }}
+    />
+  );
 }
+
+/** Now plus some days, on a whole minute (the time field shows no seconds) */
+export const inDays = (days: number) => Math.floor(Date.now() / 60000) * 60 + Math.round(days * 86400);
 
 export async function copyText(t: string): Promise<boolean> {
   try {
@@ -42,12 +61,24 @@ export async function pasteText(): Promise<string | null> {
 export function PersonInput(props: { node: NexusNode; session: Session; value: string; placeholder?: string; className?: string; onPerson: (p: Person | null, text: string) => void }) {
   const [text, setText] = useState(props.value);
   const [state, setState] = useState<{ ok?: string; error?: string; busy?: boolean }>({});
+  const checked = useRef(props.value);
 
-  useEffect(() => setText(props.value), [props.value]);
+  //a new value from outside (another block moved here, a template) starts fresh
+  useEffect(() => {
+    if (props.value !== checked.current) {
+      setText(props.value);
+      setState({});
+      checked.current = props.value;
+    }
+  }, [props.value]);
 
   const check = async () => {
     const t = text.trim();
+    if (t === checked.current && !state.error) {
+      return;
+    }
     if (!t) {
+      checked.current = '';
       setState({});
       props.onPerson(null, '');
       return;
@@ -56,11 +87,17 @@ export function PersonInput(props: { node: NexusNode; session: Session; value: s
     try {
       const p = await findPerson(props.node, props.session, t);
       const me = p.genesis === props.session.genesis;
+      checked.current = t;
       setState({ ok: me ? 'you' : p.username ? `${p.username}` : `user ${shortId(p.genesis)}` });
       props.onPerson(p, t);
     } catch (e) {
-      setState({ error: errorText(e) });
-      props.onPerson(null, t);
+      //only "no such user" clears the person; a node hiccup keeps what was there
+      const notFound = /No account|username/i.test(errorText(e));
+      setState({ error: notFound ? errorText(e) : `Could not check now: ${errorText(e)}` });
+      if (notFound) {
+        checked.current = t;
+        props.onPerson(null, t);
+      }
     }
   };
 

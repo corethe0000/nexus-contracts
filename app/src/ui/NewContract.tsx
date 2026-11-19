@@ -5,7 +5,7 @@ import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import { accountFor, blockTime, decisionState, reloadAccounts, sendContract, type DecisionState, type Person, type Session } from '../lib/chain';
 import { decisionKey, fmtTime } from '../lib/status';
 import { Builder } from './Builder';
-import { copyText, errorText, formatAmount, parseAmount, pasteText, PersonInput, shortId, TimeInput } from './common';
+import { copyText, errorText, formatAmount, inDays, parseAmount, pasteText, PersonInput, shortId, TimeInput } from './common';
 
 type Template = 'return' | 'timelock' | 'escrow' | 'blank';
 
@@ -16,15 +16,14 @@ const templates: { id: Template; name: string; text: string }[] = [
   { id: 'blank', name: 'Blank', text: 'Build your own rules with blocks or code' },
 ];
 
-const day = 86400;
 
 export function NewContract({ node, session, onSent }: { node: NexusNode; session: Session; onSent: () => void }) {
   const now = () => Math.floor(Date.now() / 1000);
   const [template, setTemplate] = useState<Template>('return');
   const [recipient, setRecipient] = useState<Person | null>(null);
   const [recipientText, setRecipientText] = useState('');
-  const [deadline, setDeadline] = useState(() => now() + 7 * day);
-  const [unlock, setUnlock] = useState(() => now() + 30 * day);
+  const [deadline, setDeadline] = useState(() => inDays(7));
+  const [unlock, setUnlock] = useState(() => inDays(30));
   const [cancelable, setCancelable] = useState(false);
   const [returnAfter, setReturnAfter] = useState(0);
   const [arbiter, setArbiter] = useState<Person | null>(null);
@@ -64,6 +63,9 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       if (!arbiter) {
         return 'Pick the arbiter';
       }
+      if (arbiter.genesis === session.genesis || arbiter.genesis === recipient.genesis) {
+        return 'The arbiter must be a third person: with you or the recipient as arbiter, one side decides alone';
+      }
       if (!/^[a-z0-9]{4,32}$/.test(escrowId)) {
         return 'The escrow id is 4 to 32 lower case letters or digits, as the arbiter gave it to you';
       }
@@ -71,8 +73,10 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     return '';
   }, [template, recipient, arbiter, escrowId, session.genesis]);
 
+  //the builder follows the template form until the user edits blocks or code; then the button resets it
+  const [manual, setManual] = useState(false);
   const fillFromTemplate = () => {
-    setResult({});
+    setManual(false);
     if (template === 'blank') {
       setWays([[{ kind: 'who', genesis: recipient?.genesis ?? '' }]]);
       return;
@@ -95,6 +99,13 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       setResult({ error: errorText(e) });
     }
   };
+
+  useEffect(() => {
+    if (!manual && (template === 'blank' || !templateError)) {
+      fillFromTemplate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manual, template, templateError, recipient, deadline, unlock, cancelable, returnAfter, arbiter, escrowId, fallback]);
 
   //--- builder and console stay in step ---
   const known = useMemo(() => ways.flat().filter((b): b is Extract<Block, { kind: 'decision' }> => b.kind === 'decision').map((b) => ({ arbiter: b.arbiter, id: b.id })), [ways]);
@@ -123,7 +134,13 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     }
   }, [built]);
 
+  const userSetWays = (w: Way[]) => {
+    setManual(true);
+    setWays(w);
+  };
+
   const onCode = (text: string) => {
+    setManual(true);
     setCode(text);
     try {
       const c = parse(text);
@@ -215,29 +232,32 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     if (arbiter) {
       l[arbiter.genesis] = `${arbiter.username ?? 'the arbiter'} (arbiter)`;
     }
+    l[session.genesis] = 'You';
     return l;
   }, [names, recipient, arbiter, session.genesis]);
 
+  //todo = still to fill in (shown calmly), problems = something is wrong; both block sending
+  const todo: string[] = [];
   const problems: string[] = [];
   const warnings: string[] = [];
   if (built.error) {
-    problems.push(built.error);
+    todo.push(built.error === 'add at least one way to claim' ? 'Rules: pick a template above, or add blocks or code' : `Rules: ${built.error}`);
   }
   if (codeError) {
     problems.push('The code has an error: fix it or undo it');
   }
   if (!fromAccount) {
-    problems.push('Pick the account that pays');
+    todo.push('Pick the account that pays');
   }
   if (amount === null || amount === 0n) {
-    problems.push('Enter the amount');
+    todo.push('Enter the amount');
   } else if (fromAccount && amount > fromAccount.balance) {
     problems.push('The amount is more than the account holds');
   }
   if (autoTo.looking) {
-    problems.push("Looking for the recipient's account in this token...");
+    todo.push("Looking for the recipient's account in this token...");
   } else if (!payTo.trim()) {
-    problems.push('Enter the account the payment goes to');
+    todo.push('Enter the account the payment goes to');
   } else if (toInfo === 'missing') {
     problems.push('The account it goes to was not found');
   } else if (toInfo && fromAccount && toInfo.token !== fromAccount.token) {
@@ -273,11 +293,21 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       warnings.push('You have no way to take it back: if they never claim, it stays locked for good.');
     }
   }
+  if (built.bytes && /caller\.timestamp|contract\.timestamp/.test(code)) {
+    warnings.push('caller.timestamp and contract.timestamp are written by whoever sends the transaction and can be set back in time. Use ledger.timestamp (block time) for deadlines.');
+  }
   const t = chainTime || now();
   for (const b of ways.flat()) {
     if ((b.kind === 'before' || b.kind === 'from') && b.time <= t) {
       warnings.push(`${b.kind === 'before' ? 'Before' : 'From'} ${fmtTime(b.time)} is already past.`);
     }
+  }
+
+  //the same contract, amount and account just sent: no second send by a double click
+  const sendKey = built.bytes && amount ? `${hexOfMemory(built.bytes)}/${amount}/${payTo}/${from}` : '';
+  const [sentKey, setSentKey] = useState('');
+  if (sendKey && sendKey === sentKey) {
+    problems.push('This exact contract was just sent. Change something to send another one.');
   }
 
   const send = async () => {
@@ -289,6 +319,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     try {
       const txid = await sendContract(node, session, { from: fromAccount.address, to: payTo.trim(), amount, condition: built.bytes });
       setResult({ ok: txid });
+      setSentKey(sendKey);
       setConfirm(false);
       await reloadAccounts(node, session).catch(() => undefined);
     } catch (e) {
@@ -297,6 +328,18 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     } finally {
       setBusy(false);
     }
+  };
+
+  //an edit after sending starts the next contract: the old "Sent" note would read as if this one was sent
+  useEffect(() => {
+    setResult((r) => (r.ok ? {} : r));
+  }, [ways, amountText, payTo, from]);
+
+  const startOver = () => {
+    setWays([[]]);
+    setAmountText('');
+    setResult({});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const words = built.condition ? describe(built.condition, { labels, sender: session.genesis, time: fmtTime }) : [];
@@ -403,10 +446,18 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
           <div>
             <TemplateExplain template={template} />
             <div className="row spaced">
-              <button className="primary" onClick={fillFromTemplate} disabled={!!templateError && template !== 'blank'}>
-                Put into the builder
-              </button>
-              {templateError && template !== 'blank' && <span className="muted">{templateError}</span>}
+              {manual ? (
+                <>
+                  <button onClick={fillFromTemplate} disabled={!!templateError && template !== 'blank'}>
+                    Reset the rules to this template
+                  </button>
+                  <span className="muted">You changed the rules by hand, so this form no longer changes them.</span>
+                </>
+              ) : templateError && template !== 'blank' ? (
+                <span className="muted">{templateError}</span>
+              ) : (
+                <span className="ok">The rules below follow this form. Change them further with blocks or code.</span>
+              )}
             </div>
           </div>
         </div>
@@ -417,12 +468,15 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
           <h2>
             <span className="step">2</span>Blocks
           </h2>
-          <Builder node={node} session={session} ways={ways} setWays={setWays} names={names} onName={onName} />
+          <Builder node={node} session={session} ways={ways} setWays={userSetWays} names={names} onName={onName} />
         </section>
         <section className="card console">
           <h2>
             <span className="step">2</span>Code
           </h2>
+          <p className="muted" style={{ margin: '-6px 0 8px', fontSize: 12 }}>
+            Times in the code are UTC (date(...) without a zone is read as UTC). The blocks and the review show your local time.
+          </p>
           <div className="bar">
             <button className="small" onClick={() => copyText(code)}>
               Copy
@@ -521,6 +575,16 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
             </>
           )}
           <div className="stack spaced" style={{ gap: 8 }}>
+            {todo.length > 0 && (
+              <div className="note">
+                <b>Still needed</b>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                  {todo.map((t, i) => (
+                    <li key={i}>{t}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {problems.map((p, i) => (
               <div key={`p${i}`} className="note bad">
                 {p}
@@ -542,11 +606,14 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
               </button>{' '}
               <button className="link" onClick={onSent}>
                 see My contracts
+              </button>{' '}
+              <button className="link" onClick={startOver}>
+                start a new contract
               </button>
             </div>
           )}
           <div className="row spaced">
-            <button className="primary" disabled={problems.length > 0 || busy} onClick={() => setConfirm(true)}>
+            <button className="primary" disabled={problems.length > 0 || todo.length > 0 || busy} onClick={() => setConfirm(true)}>
               Review and send
             </button>
           </div>

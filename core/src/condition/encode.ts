@@ -93,6 +93,9 @@ function operand(o: Operand, w: Out): void {
       w.u8(o.alg === 'sk256' ? OP.sk256 : OP.sk512);
       return;
     case 'math':
+      if (o.right.kind === 'math' || o.right.kind === 'hash') {
+        throw new Error('only a plain value can stand right of + - * / %');
+      }
       operand(o.left, w);
       w.u8(mathCodes[o.op]);
       operand(o.right, w);

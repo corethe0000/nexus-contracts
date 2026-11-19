@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { routeLinksOutside } from '../../../../dex/app/src/lib/module';
 import { makeNode, signIn, type Session } from '../lib/chain';
 import { NewContract } from './NewContract';
@@ -46,13 +46,19 @@ export function App() {
       </div>
       {/* kept mounted so a half-built contract survives a look at another tab */}
       <div hidden={tab !== 'new'}>
-        <NewContract node={node} session={session} onSent={() => setTab('mine')} />
+        <Guard>
+          <NewContract node={node} session={session} onSent={() => setTab('mine')} />
+        </Guard>
       </div>
       <div hidden={tab !== 'mine'}>
-        <MyContracts node={node} session={session} active={tab === 'mine'} onWaiting={setWaiting} />
+        <Guard>
+          <MyContracts node={node} session={session} active={tab === 'mine'} onWaiting={setWaiting} />
+        </Guard>
       </div>
       <div hidden={tab !== 'arbiter'}>
-        <Arbiter node={node} session={session} active={tab === 'arbiter'} />
+        <Guard>
+          <Arbiter node={node} session={session} active={tab === 'arbiter'} />
+        </Guard>
       </div>
     </div>
   );
@@ -105,4 +111,25 @@ function SignIn({ node, onIn }: { node: ReturnType<typeof makeNode>; onIn: (s: S
       </p>
     </form>
   );
+}
+
+//an unexpected error in one tab shows a message there instead of a blank module
+class Guard extends Component<{ children: ReactNode }, { error: string | null }> {
+  state = { error: null as string | null };
+  static getDerivedStateFromError(e: unknown) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="note bad">
+          Something went wrong here: {this.state.error}{' '}
+          <button className="small" onClick={() => this.setState({ error: null })}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

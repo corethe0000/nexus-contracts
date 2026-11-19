@@ -158,3 +158,45 @@ suite('kinds', () => {
     expect(contractKind(decode(lockCondition({ recipient: bob, sender: alice, hashlock: new Uint8Array(32), deadline: 1790000000 })))).toBe('swap');
   });
 });
+
+suite('review fixes', () => {
+  it('prints and describes a time beyond the date range without crashing', () => {
+    const c = parse('ledger.timestamp < 99999999999999');
+    expect(print(c)).toContain('99999999999999');
+    expect(describe(c)[0]).toContain('99999999999999');
+    expect(hex(encode(parse(print(c))))).toBe(hex(encode(c)));
+  });
+
+  it('refuses math or a hash right of math, which the chain would read differently', () => {
+    expect(() => parse('ledger.height > 10 + (2 * 3)')).toThrow(/plain value/);
+    expect(() => parse(`caller.genesis == 0x${alice} + sk256(ledger.height)`)).toThrow(/plain value/);
+    expect(hex(encode(parse('ledger.height > 10 + 2 * 3')))).toBe(hex(encode(parse('ledger.height > 10 + 2 * 3'))));
+  });
+
+  it('reports the real error inside brackets', () => {
+    expect(() => parse('(caller.genesis == 0x12 AND ledger.height > 1)')).toThrow(/64 hex/);
+    expect(() => parse('(ledger.height > 1 AND ledger.height > 2 OR ledger.height > 3)')).toThrow(/same level/);
+  });
+
+  it('reads console times without a zone as UTC', () => {
+    const a = parse('ledger.timestamp < date(2027-01-01T00:00)');
+    const b = parse('ledger.timestamp < date(2027-01-01T00:00Z)');
+    const c = parse('ledger.timestamp < date(2027-01-01T01:00+01:00)');
+    expect(hex(encode(a))).toBe(hex(encode(b)));
+    expect(hex(encode(c))).toBe(hex(encode(b)));
+  });
+
+  it('keeps custom contracts that use a hash or a transaction time visible', () => {
+    expect(contractKind(parse('ledger.timestamp >= contract.timestamp + 86400'))).toBe('contract');
+    expect(contractKind(parse(`sk256(register(0x${carol}).value("address")) == 0x${bob}`))).toBe('contract');
+    expect(contractKind(decode(expiryCondition(alice, 0)))).toBe('expiry');
+  });
+});
+
+suite('wording', () => {
+  it('names who can use a way without a who part', () => {
+    const c = parse('ledger.height > 1');
+    expect(describe(c)[0]).toBe('The recipient or the sender can claim if the block height is above 1');
+    expect(describe(c, { labels: { [alice]: 'You' }, sender: alice })[0]).toBe('The recipient or you can claim if the block height is above 1');
+  });
+});

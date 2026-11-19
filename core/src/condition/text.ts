@@ -16,7 +16,13 @@ const maths: MathOp[] = ['+', '-', '*', '/', '%'];
 
 //--- print ---
 
+export const maxDateSeconds = 8640000000000n;
+
 function dateText(seconds: bigint): string {
+  //Date covers +-8.64e12 seconds; anything beyond prints as the plain number
+  if (seconds > maxDateSeconds) {
+    return seconds.toString();
+  }
   return new Date(Number(seconds) * 1000).toISOString().replace(/:00\.000Z$/, 'Z').replace(/\.000Z$/, 'Z');
 }
 
@@ -149,6 +155,7 @@ class Parser {
 
   //a bracket opens a group of conditions unless it only wraps a value (checked by a trial parse)
   term(): Condition {
+    let groupError: ParseError | null = null;
     if (this.peek() === '(') {
       const save = this.i;
       try {
@@ -158,11 +165,26 @@ class Parser {
         if (!this.isCompare(this.peek()) && !maths.includes(this.peek() as MathOp)) {
           return inner;
         }
-      } catch {
-        //not a condition group
+      } catch (e) {
+        if (!(e instanceof ParseError)) {
+          throw e;
+        }
+        groupError = e;
       }
       this.i = save;
     }
+    //not a group: a bracketed value; when that fails too, the error that got further is the real one
+    try {
+      return this.comparison();
+    } catch (e) {
+      if (groupError && e instanceof ParseError && groupError.pos >= e.pos) {
+        throw groupError;
+      }
+      throw e;
+    }
+  }
+
+  comparison(): Condition {
     const left = this.operand();
     const p = this.pos();
     const op = this.next();
@@ -180,7 +202,13 @@ class Parser {
     let o = this.value();
     while (maths.includes(this.peek() as MathOp)) {
       const op = this.next() as MathOp;
-      o = { kind: 'math', op, left: o, right: this.value() };
+      const p = this.pos();
+      const right = this.value();
+      //the core applies math left to right with a plain value on the right
+      if (right.kind === 'math' || right.kind === 'hash') {
+        throw new ParseError(`only a plain value can follow ${op}: no brackets or hashes there, the chain works left to right`, p);
+      }
+      o = { kind: 'math', op, left: o, right };
     }
     return o;
   }
@@ -205,8 +233,10 @@ class Parser {
     }
     if (t.startsWith('date(')) {
       const inner = t.slice(5, -1).trim();
-      const ms = /^\d+$/.test(inner) ? Number(inner) * 1000 : Date.parse(inner);
-      if (!Number.isFinite(ms)) {
+      //times without a zone are UTC, like the ones printed here
+      const zoned = /T/.test(inner) && !/(Z|[+-]\d\d:?\d\d)$/i.test(inner) ? `${inner}Z` : inner;
+      const ms = /^\d+$/.test(inner) ? Number(inner) * 1000 : Date.parse(zoned);
+      if (!Number.isFinite(ms) || ms < 0) {
         throw new ParseError(`not a date: ${inner}`, p);
       }
       return { kind: 'uint64', value: BigInt(Math.floor(ms / 1000)) };
