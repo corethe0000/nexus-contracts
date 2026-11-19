@@ -1,6 +1,6 @@
 # Nexus Contracts
 
-A desktop wallet module for Nexus conditional payments. You lock a payment with your own rules: pick a template (escrow, time-lock, return if unclaimed, release with a code), or build the rules with blocks or code. The block builder and the code console edit the same contract.
+A desktop wallet module for Nexus conditional payments. You lock a payment with your own rules: pick a template (escrow, time-lock, return if unclaimed, release with a code, approvals k of n, crowdfunding, vesting, milestones), or build the rules with blocks or code. The block builder and the code console edit the same contract.
 
 ## How it works
 
@@ -11,6 +11,10 @@ Deadlines use `ledger.timestamp`, the time of the best block. The claim's own ti
 An escrow needs a decision register. The arbiter creates it first: a local name `escrow-<id>` holding 0 (open), 1 (release) or 2 (refund). The condition checks both the register's owner and its value. The arbiter can never claim the payment.
 
 Release with a code: the contract holds only the hash of a code. To claim, the recipient writes the code into its own code box (a local name `nxcode`, set up once) and then credits. The chain checks the box as it was in the last block, so the write and the claim are two transactions with a block between them. The box must exist before the payment is sent.
+
+Approvals: k of n approvers each create the same deal id (their own `escrow-<id>` register) and decide release or refund. Conditions cannot count, so every group of k approvers is its own way to claim (and every group of n-k+1 for the refund); up to 5 approvers. Crowdfunding is an escrow that many backers send with the same arbiter and campaign id: one decision settles all of them. Vesting and milestones send several payments in one transaction (up to 50), each with its own time-lock or code.
+
+Claim fee: the core counts what checking a condition costs (each register read about 4100). Up to 4096 it is free; above it the claim must carry a FEE contract for the rest, except on private / hybrid chains. `core/src/cost.ts` mirrors the core's table and the claim adds the fee (an escrow claim about 0.013 NXS, 2 of 3 approvals about 0.1 NXS). Not yet tried on a chain that charges fees.
 
 ## Layout
 

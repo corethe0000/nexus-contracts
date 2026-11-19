@@ -111,3 +111,59 @@ export function escrow(t: Escrow): Condition {
   }
   return or(...ways);
 }
+
+//--- approvals by several people ---
+
+//every way to pick k of the list, in order
+export function combinations<T>(list: T[], k: number): T[][] {
+  if (k === 0) {
+    return [[]];
+  }
+  return list.flatMap((x, i) => combinations(list.slice(i + 1), k - 1).map((rest) => [x, ...rest]));
+}
+
+export const maxApprovers = 5;
+
+export interface Approvals {
+  sender: string;
+  recipient: string;
+  approvers: string[]; //genesis of each, each has its decision register escrow-<id>
+  required: number; //how many must say release
+  id: string; //the same escrow id at every approver
+  fallback?: number; //the sender can take it back from this time on when not released
+}
+
+/** k of n approvers say release: the recipient claims; enough say refund that k can no longer be reached: the sender
+ *  takes it back. Conditions cannot count, so each group of approvers that is enough is its own way to claim. */
+export function approvals(t: Approvals): Condition {
+  checkGenesis('sender', t.sender);
+  checkGenesis('recipient', t.recipient);
+  const set = [...new Set(t.approvers)];
+  if (set.length !== t.approvers.length) {
+    throw new Error('each approver only once');
+  }
+  if (set.length < 2 || set.length > maxApprovers) {
+    throw new Error('2 to 5 approvers');
+  }
+  set.forEach((g) => checkGenesis('approver', g));
+  if (set.includes(t.sender) || set.includes(t.recipient)) {
+    throw new Error('the approvers must be other people than the sender and the recipient');
+  }
+  if (!Number.isInteger(t.required) || t.required < 1 || t.required > set.length) {
+    throw new Error('the number of approvals needed must be between 1 and the number of approvers');
+  }
+  const decided = (who: string[], d: number): Condition[] =>
+    who.flatMap((a) => {
+      const reg = decisionAddress(a, t.id);
+      return [compare(register(reg, 'owner'), '==', u256(memoryOfHex(a))), compare(register(reg, { value: decisionField }), '==', u256(decisionValue(d)))];
+    });
+  const ways: Condition[] = [
+    ...combinations(set, t.required).map((group) => and(callerIs(t.recipient), ...decided(group, decision.release))),
+    ...combinations(set, set.length - t.required + 1).map((group) => and(callerIs(t.sender), ...decided(group, decision.refund))),
+  ];
+  if (t.fallback !== undefined) {
+    checkTime('fallback time', t.fallback);
+    ways.push(and(callerIs(t.sender), blockTime('>=', t.fallback)));
+  }
+  return or(...ways);
+}

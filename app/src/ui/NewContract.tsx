@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { codeHash, codeRelease, decisionIds, describe, encode, escrow, newCode, parse, ParseError, print, returnIfUnclaimed, timeLock, toCondition, toWays, type Block, type Condition, type Way } from '@nexus-contracts/core/src';
+import { approvals, codeHash, codeRelease, decisionIds, maxApprovers, describe, encode, escrow, newCode, parse, ParseError, print, returnIfUnclaimed, timeLock, toCondition, toWays, type Block, type Condition, type Way } from '@nexus-contracts/core/src';
 import { hexOfMemory } from '../../../../wallet/src/lib/tritium';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
-import { accountFor, blockTime, codeBoxState, decisionState, reloadAccounts, sendContract, type DecisionState, type Person, type Session } from '../lib/chain';
+import { accountFor, blockTime, codeBoxState, feeForCondition, decisionState, reloadAccounts, sendContract, type DecisionState, type Person, type Session } from '../lib/chain';
 import { decisionKey, fmtTime } from '../lib/status';
 import { Builder } from './Builder';
+import { Parts, type PartsKind } from './Parts';
 import { saveCode } from '../lib/codes';
 import { shareText } from '../lib/share';
 import { copyText, errorText, formatAmount, inDays, parseAmount, pasteText, PersonInput, shortId, TimeInput } from './common';
 import { t } from '../lib/i18n';
 
-type Template = 'return' | 'timelock' | 'escrow' | 'code' | 'blank';
+type Template = 'return' | 'timelock' | 'escrow' | 'code' | 'approvals' | 'crowd' | 'vesting' | 'milestones' | 'blank';
+const multiPart = (x: Template): x is PartsKind => x === 'vesting' || x === 'milestones';
 
 //a function, so the texts follow the language set at start
 const templates = (): { id: Template; name: string; text: string }[] => [
@@ -18,6 +20,10 @@ const templates = (): { id: Template; name: string; text: string }[] => [
   { id: 'timelock', name: t('Time-lock'), text: t('They can claim only from a date on') },
   { id: 'escrow', name: t('Escrow'), text: t('A person you both trust decides: release to them or refund to you') },
   { id: 'code', name: t('Release with a code'), text: t('They claim once you give them a code, else it comes back to you') },
+  { id: 'approvals', name: t('Approvals'), text: t('Released when enough of the people you pick approve, for example 2 of 3') },
+  { id: 'crowd', name: t('Crowdfunding'), text: t('Back a project: an arbiter confirms the goal, else your money comes back') },
+  { id: 'vesting', name: t('Vesting'), text: t('Paid in parts, one part claimable every month, week or day') },
+  { id: 'milestones', name: t('Milestones'), text: t('Paid in parts, each released with its own code when that work is done') },
   { id: 'blank', name: t('Blank'), text: t('Build your own rules with blocks or code') },
 ];
 
@@ -37,6 +43,9 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
   const [fallback, setFallback] = useState(0);
   const [releaseCode, setReleaseCode] = useState(() => newCode());
   const [codeBack, setCodeBack] = useState(() => inDays(14));
+  const [approverTexts, setApproverTexts] = useState<string[]>(['', '', '']);
+  const [approverPeople, setApproverPeople] = useState<(Person | null)[]>([null, null, null]);
+  const [required, setRequired] = useState(2);
   const [ways, setWaysRaw] = useState<Way[]>([[]]);
   const [names, setNames] = useState(() => new Map<string, string>());
   const [code, setCode] = useState('');
@@ -66,7 +75,28 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     if (recipient.genesis === session.genesis) {
       return t('The recipient is you');
     }
-    if (template === 'escrow') {
+    if (multiPart(template)) {
+      return '';
+    }
+    if (template === 'approvals') {
+      if (approverPeople.some((p) => !p)) {
+        return t('Pick every approver');
+      }
+      const g = approverPeople.map((p) => p!.genesis);
+      if (new Set(g).size !== g.length) {
+        return t('Each approver only once');
+      }
+      if (g.includes(session.genesis) || g.includes(recipient.genesis)) {
+        return t('The approvers must be other people than you and the recipient');
+      }
+      if (!/^[a-z0-9]{4,32}$/.test(escrowId)) {
+        return t('The deal id is 4 to 32 lower case letters or digits, the same for every approver');
+      }
+    }
+    if (template === 'crowd' && !fallback) {
+      return t('Pick the date your money comes back if the goal is not confirmed');
+    }
+    if (template === 'escrow' || template === 'crowd') {
       if (!arbiter) {
         return t('Pick the arbiter');
       }
@@ -78,7 +108,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       }
     }
     return '';
-  }, [template, recipient, arbiter, escrowId, session.genesis]);
+  }, [template, recipient, arbiter, escrowId, session.genesis, approverPeople, fallback]);
 
   //the builder follows the template form until the user edits blocks or code; then the button resets it
   const [manual, setManual] = useState(false);
@@ -88,7 +118,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       setWays([[{ kind: 'who', genesis: recipient?.genesis ?? '' }]]);
       return;
     }
-    if (templateError || !recipient) {
+    if (templateError || !recipient || multiPart(template)) {
       return;
     }
     const me = session.genesis;
@@ -100,10 +130,13 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
         c = timeLock({ sender: me, recipient: recipient.genesis, unlock, cancelable, returnAfter: returnAfter || undefined });
       } else if (template === 'code') {
         c = codeRelease({ sender: me, recipient: recipient.genesis, hash: codeHash(releaseCode), takeBackFrom: codeBack });
+      } else if (template === 'approvals') {
+        c = approvals({ sender: me, recipient: recipient.genesis, approvers: approverPeople.map((p) => p!.genesis), required, id: escrowId, fallback: fallback || undefined });
       } else {
         c = escrow({ sender: me, recipient: recipient.genesis, arbiter: arbiter!.genesis, id: escrowId, fallback: fallback || undefined });
       }
-      setWays(withCodes(toWays(c, decisionIds(arbiter ? [{ arbiter: arbiter.genesis, id: escrowId }] : [])), [[{ kind: 'secret', genesis: recipient.genesis, hash: Array.from(codeHash(releaseCode), (x) => x.toString(16).padStart(2, '0')).join(''), code: releaseCode }]]));
+      const deciders = template === 'approvals' ? approverPeople.map((p) => p!.genesis) : arbiter ? [arbiter.genesis] : [];
+      setWays(withCodes(toWays(c, decisionIds(deciders.map((a) => ({ arbiter: a, id: escrowId })))), [[{ kind: 'secret', genesis: recipient.genesis, hash: Array.from(codeHash(releaseCode), (x) => x.toString(16).padStart(2, '0')).join(''), code: releaseCode }]]));
     } catch (e) {
       setResult({ error: errorText(e) });
     }
@@ -114,7 +147,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       fillFromTemplate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manual, template, templateError, recipient, deadline, unlock, cancelable, returnAfter, arbiter, escrowId, fallback, releaseCode, codeBack]);
+  }, [manual, template, templateError, recipient, deadline, unlock, cancelable, returnAfter, arbiter, escrowId, fallback, releaseCode, codeBack, approverPeople, required]);
 
   //--- builder and console stay in step ---
   const known = useMemo(() => ways.flat().filter((b): b is Extract<Block, { kind: 'decision' }> => b.kind === 'decision').map((b) => ({ arbiter: b.arbiter, id: b.id })), [ways]);
@@ -288,7 +321,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
   for (const k of known) {
     const d = decisions.get(decisionKey(k.arbiter, k.id));
     if (d && !d.exists) {
-      problems.push(t('The arbiter has not created escrow "{id}" yet. Ask them to create it in the Arbiter tab first: a contract that reads a missing register can never be claimed, not even taken back.', { id: k.id }));
+      problems.push(t('{who} has not created the id "{id}" yet. Ask them to create it in the Arbiter tab first: a contract that reads a missing register can never be claimed, not even taken back.', { who: labels[k.arbiter] ?? shortId(k.arbiter), id: k.id }));
     } else if (d?.exists && d.owner !== k.arbiter) {
       problems.push(t('Escrow "{id}" now belongs to someone else', { id: k.id }));
     } else if (d?.exists && d.value !== 0) {
@@ -433,7 +466,79 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
                 </label>
               </>
             )}
-            {template === 'escrow' && (
+            {template === 'approvals' && (
+              <>
+                {approverTexts.map((text, i) => (
+                  <label key={i} className="field">
+                    <span>{t('Approver {n}', { n: i + 1 })}</span>
+                    <div className="row">
+                      <PersonInput
+                        node={node}
+                        session={session}
+                        value={text}
+                        onPerson={(p, txt) => {
+                          setApproverPeople((list) => list.map((x, j) => (j === i ? p : x)));
+                          setApproverTexts((list) => list.map((x, j) => (j === i ? txt : x)));
+                          if (p) {
+                            onName(p.genesis, p.username ?? txt);
+                          }
+                        }}
+                      />
+                      {approverTexts.length > 2 && (
+                        <button
+                          className="small"
+                          onClick={() => {
+                            setApproverTexts((list) => list.filter((_, j) => j !== i));
+                            setApproverPeople((list) => list.filter((_, j) => j !== i));
+                            setRequired((r) => Math.min(r, approverTexts.length - 1));
+                          }}
+                        >
+                          {t('Remove')}
+                        </button>
+                      )}
+                    </div>
+                  </label>
+                ))}
+                <div className="row field">
+                  {approverTexts.length < maxApprovers && (
+                    <button
+                      className="small"
+                      onClick={() => {
+                        setApproverTexts((list) => [...list, '']);
+                        setApproverPeople((list) => [...list, null]);
+                      }}
+                    >
+                      {t('Add an approver')}
+                    </button>
+                  )}
+                  <span>{t('Approvals needed')}</span>
+                  <select value={required} onChange={(e) => setRequired(Number(e.target.value))}>
+                    {approverTexts.map((_, i) => (
+                      <option key={i} value={i + 1}>
+                        {t('{k} of {n}', { k: i + 1, n: approverTexts.length })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <label className="field">
+                  <span>{t('Deal id')}</span>
+                  <input value={escrowId} onChange={(e) => setEscrowId(e.target.value.toLowerCase().trim())} placeholder={t('e.g. order42')} spellCheck={false} />
+                  <span className="hint">{t('Every approver creates this same id first in their Arbiter tab. There each one presses Release or Refund.')}</span>
+                </label>
+                <label className="field">
+                  <span>{t('Comes back to you without enough approvals from (optional)')}</span>
+                  <div className="row">
+                    <TimeInput value={fallback} onChange={setFallback} />
+                    {fallback > 0 && (
+                      <button className="small" onClick={() => setFallback(0)}>
+                        {t('Clear')}
+                      </button>
+                    )}
+                  </div>
+                </label>
+              </>
+            )}
+            {(template === 'escrow' || template === 'crowd') && (
               <>
                 <label className="field">
                   <span>{t('Arbiter (decides; cannot take the payment)')}</span>
@@ -451,12 +556,12 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
                   />
                 </label>
                 <label className="field">
-                  <span>{t('Escrow id')}</span>
+                  <span>{template === 'crowd' ? t('Campaign id') : t('Escrow id')}</span>
                   <input value={escrowId} onChange={(e) => setEscrowId(e.target.value.toLowerCase().trim())} placeholder={t('from the arbiter, e.g. order42')} spellCheck={false} />
                   <span className="hint">{t('The arbiter creates it first in their Arbiter tab, then gives you the id.')}</span>
                 </label>
                 <label className="field">
-                  <span>{t('Comes back to you without a decision from (optional)')}</span>
+                  <span>{template === 'crowd' ? t('Your money comes back if the goal is not confirmed by') : t('Comes back to you without a decision from (optional)')}</span>
                   <div className="row">
                     <TimeInput value={fallback} onChange={setFallback} />
                     {fallback > 0 && (
@@ -501,7 +606,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
                   </button>
                   <span className="muted">{t('You changed the rules by hand, so this form no longer changes them.')}</span>
                 </>
-              ) : templateError && template !== 'blank' ? (
+              ) : multiPart(template) ? null : templateError && template !== 'blank' ? (
                 <span className="muted">{templateError}</span>
               ) : (
                 <span className="ok">{t('The rules below follow this form. Change them further with blocks or code.')}</span>
@@ -511,6 +616,8 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
         </div>
       </section>
 
+      {!multiPart(template) && (
+      <>
       <div className="grid2">
         <section className="card">
           <h2>
@@ -643,6 +750,9 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
                 {p}
               </div>
             ))}
+            {built.condition && feeForCondition(session.net, built.condition) > 0n && (
+              <div className="note">{t('Each claim pays a network fee of about {fee} NXS (rules that read registers cost more than the free limit).', { fee: formatAmount(feeForCondition(session.net, built.condition), 6) })}</div>
+            )}
             {words.length > 0 && <div className="note">{t('Times are checked against the block time. On a quiet test chain a new block can take a while, so a claim right at the time may wait for the next block.')}</div>}
           </div>
           {result.error && <div className="note bad spaced">{result.error}</div>}
@@ -713,6 +823,9 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
           </div>
         </div>
       )}
+      </>
+      )}
+      {multiPart(template) && <Parts key={template} node={node} session={session} kind={template} recipient={recipient} labels={labels} onSent={onSent} />}
     </div>
   );
 }
@@ -743,6 +856,20 @@ function TemplateExplain({ template }: { template: Template }) {
       t('Like an escrow without a third person: you hold the release yourself, as a code.'),
       t('You pay now. When you are happy (goods arrived, job done) you give them the code, and they claim with it. If you never give it, the payment comes back to you from the date.'),
       t('They need a code box first: a one time setup in their My contracts.'),
+    ],
+    approvals: [
+      t('For money several people must agree on: a company, a family, a club.'),
+      t('Pick 2 to 5 approvers and how many must say release. Each approver creates the same deal id in their Arbiter tab and later presses Release or Refund there.'),
+      t('When enough say release, the recipient can claim. When so many say refund that release can no longer reach the number, it comes back to you.'),
+    ],
+    crowd: [
+      t('Back a project together with others: every backer sends to the same project, arbiter and campaign id.'),
+      t('When the arbiter confirms the goal (release), the project can claim every backing at once. If the arbiter refunds, or nobody decides by the date, each backer takes their money back.'),
+    ],
+    vesting: [t('One payment split into parts that become claimable one after the other, for example a salary or a gift paid monthly.'), t('Optional: you can take back the parts that are not due yet.')],
+    milestones: [
+      t('One payment split into parts, each with its own code. When a part of the work is done, give its code and they claim that part.'),
+      t('Parts never released come back to you from the date. They need a code box first, a one time setup in their My contracts.'),
     ],
     blank: [t('Each way is one set of rules that must all be true. The payment can be claimed by the first way that is true.'), t('Mix blocks and code; the code view shows exactly what goes on chain.')],
   };

@@ -5,10 +5,11 @@ import { and, compare, or, register, source, u256, u64, type Condition } from '.
 import { decode, encode } from './condition/encode';
 import { parse, print, ParseError } from './condition/text';
 import { describe } from './condition/describe';
-import { decisionAddress, escrow, returnIfUnclaimed, timeLock } from './templates';
+import { approvals, decisionAddress, escrow, returnIfUnclaimed, timeLock } from './templates';
 import { decisionIds, toCondition, toWays } from './blocks';
 import { contractKind } from './kind';
 import { codeHash, codeRelease, newCode } from './code';
+import { claimFee, costOf } from './cost';
 
 const alice = 'a1'.repeat(32);
 const bob = 'b2'.repeat(32);
@@ -221,5 +222,58 @@ suite('release with a code', () => {
     expect(hex(encode(toCondition(ways)))).toBe(hex(bytes));
     expect(describe(c, { labels: { [alice]: 'You', [bob]: 'Bob' }, sender: alice, time: () => 'then' })).toEqual(['Bob can claim with the code the sender gives', 'You can take it back from then']);
     expect(contractKind(c)).toBe('contract');
+  });
+});
+
+suite('claim cost and fee', () => {
+  it('counts like the core: a plain deadline contract is free', () => {
+    //two groups 2*128, each way: caller.genesis 32 + uint256 32, ledger.timestamp 8 + uint64 8
+    const c = returnIfUnclaimed({ sender: alice, recipient: bob, deadline: 1790000000 });
+    expect(costOf(c)).toBe(416);
+    expect(claimFee(c)).toBe(0n);
+  });
+
+  it('an escrow reads two registers per way and needs a fee', () => {
+    //each way: who 64, owner (32 + 4128 + 32), address value (32 + 4096 + 32 + 32); plus two groups
+    const c = escrow({ sender: alice, recipient: bob, arbiter: carol, id: 'order42' });
+    expect(costOf(c)).toBe(2 * (64 + 4192 + 4192) + 256);
+    expect(claimFee(c)).toBe(BigInt(2 * (64 + 4192 + 4192) + 256 - 4096));
+  });
+
+  it('a code release adds the hash', () => {
+    const c = codeRelease({ sender: alice, recipient: bob, hash: codeHash('ABCD-EFGH-JKLM'), takeBackFrom: 1800000000 });
+    //way 1: who 64 + owner 4192 + sk256(value) (4160 + 2048) + uint256 32; way 2: 80; two groups
+    expect(costOf(c)).toBe(64 + 4192 + 4160 + 2048 + 32 + 80 + 256);
+  });
+});
+
+suite('approvals by several people', () => {
+  const dave = 'd4'.repeat(32);
+  const erin = 'e5'.repeat(32);
+  it('2 of 3: three ways to release, two refusals (any pair) to refund', () => {
+    const c = approvals({ sender: alice, recipient: bob, approvers: [carol, dave, erin], required: 2, id: 'deal7' });
+    expect(c.kind === 'or' && c.items.length).toBe(3 + 3);
+    const ways = toWays(c, decisionIds([carol, dave, erin].map((a) => ({ arbiter: a, id: 'deal7' }))));
+    expect(ways.flat().some((b) => b.kind === 'code')).toBe(false);
+    expect(hex(encode(toCondition(ways)))).toBe(hex(encode(c)));
+    const words = describe(c, { labels: { [alice]: 'You', [bob]: 'Bob', [carol]: 'Carol', [dave]: 'Dave', [erin]: 'Erin' }, sender: alice, me: alice });
+    expect(words[0]).toBe('Bob can claim once Carol decides release and once Dave decides release');
+    expect(words[3]).toBe('You can take it back once Carol decides refund and once Dave decides refund');
+  });
+
+  it('1 of 2 needs both refusals to refund, and refuses bad setups', () => {
+    const c = approvals({ sender: alice, recipient: bob, approvers: [carol, dave], required: 1, id: 'deal7', fallback: 1800000000 });
+    expect(c.kind === 'or' && c.items.length).toBe(2 + 1 + 1);
+    expect(() => approvals({ sender: alice, recipient: bob, approvers: [carol, carol], required: 1, id: 'deal7' })).toThrow(/only once/);
+    expect(() => approvals({ sender: alice, recipient: bob, approvers: [carol, bob], required: 1, id: 'deal7' })).toThrow(/other people/);
+    expect(() => approvals({ sender: alice, recipient: bob, approvers: [carol, dave], required: 3, id: 'deal7' })).toThrow(/between 1/);
+  });
+
+  it('3 of 5 stays within one transaction and shows its claim fee', () => {
+    const five = ['c1', 'c2', 'c3', 'c4', 'c5'].map((x) => x.repeat(32));
+    const c = approvals({ sender: alice, recipient: bob, approvers: five, required: 3, id: 'deal7' });
+    expect(c.kind === 'or' && c.items.length).toBe(10 + 10);
+    expect(encode(c).length).toBeLessThan(10000);
+    expect(Number(claimFee(c))).toBeGreaterThan(400000);
   });
 });

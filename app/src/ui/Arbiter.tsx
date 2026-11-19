@@ -8,6 +8,8 @@ import { t } from '../lib/i18n';
 //a function, so the texts follow the language set at start
 const valueNames = (): Record<number, string> => ({ 0: t('open'), 1: t('released to the recipient'), 2: t('refunded to the sender') });
 
+const autoRefreshMs = 30000;
+
 export function Arbiter({ node, session, active }: { node: NexusNode; session: Session; active: boolean }) {
   const [items, setItems] = useState<{ id: string; d: DecisionState }[]>([]);
   const [uses, setUses] = useState(new Map<string, ChainContract[]>());
@@ -33,6 +35,15 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
     if (active) {
       void load();
     }
+  }, [active, load]);
+
+  //while the tab is open, a new block can bring news: look again every half minute
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const timer = setInterval(() => void load(), autoRefreshMs);
+    return () => clearInterval(timer);
   }, [active, load]);
 
   const run = async (label: string, fn: () => Promise<string>, ok: string, after?: () => void) => {

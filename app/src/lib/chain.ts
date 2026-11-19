@@ -9,7 +9,7 @@ import { recentBlocks } from '../../../../wallet/src/lib/blocks';
 import { conditionOf, parseSlot } from '../../../../wallet/src/lib/htlc';
 import { addressOfMemory, creditContract, debitContract, feeContract, hexOfMemory, memoryOfAddress, memoryOfHex, nameContract, nameFee, namedAddress, nameWriteContract, parseTx } from '../../../../wallet/src/lib/tritium';
 import { t } from './i18n';
-import { codeBoxAddress, codeBoxName, codeSecret, contractKind, decisionAddress, decisionName, decode, type Condition, type ContractKind } from '@nexus-contracts/core/src';
+import { claimFee, codeBoxAddress, codeBoxName, codeSecret, contractKind, decisionAddress, decisionName, decode, type Condition, type ContractKind } from '@nexus-contracts/core/src';
 
 export type { NexusAccount };
 
@@ -86,10 +86,44 @@ export async function sendContract(node: NexusNode, s: Session, p: { from: strin
   return node.submit(s.who, s.genesis, (ts) => [debitContract({ from: { address: p.from, state }, to: p.to, amount: p.amount, condition: p.condition }, ts)]);
 }
 
+/** Several payments with their own rules in one transaction (vesting, milestones), each on the balance the last left */
+export async function sendContracts(node: NexusNode, s: Session, p: { from: string; to: string; parts: { amount: bigint; condition: Uint8Array }[] }): Promise<string> {
+  if (p.parts.length < 1 || p.parts.length > 50) {
+    throw new Error(t('1 to 50 parts'));
+  }
+  const first = await node.accountState(p.from);
+  return node.submit(s.who, s.genesis, (ts) => {
+    let state = first;
+    return p.parts.map((part) => {
+      const out = debitContract({ from: { address: p.from, state }, to: p.to, amount: part.amount, condition: part.condition }, ts);
+      state = { ...state, balance: state.balance - part.amount, modified: ts };
+      return out;
+    });
+  });
+}
+
 /** CREDIT of one contract into an own account: the recipient's account to claim, the sender's to take it back */
+//conditions that read registers cost more than the free limit: on a chain with fees the claim pays the rest
+export const feeForCondition = (net: NexusNet, c: Condition | null) => (net.private || net.hybrid || !c ? 0n : claimFee(c));
+export const claimFeeOn = (net: NexusNet, c: ChainContract) => feeForCondition(net, c.condition);
+
 export async function claim(node: NexusNode, s: Session, c: ChainContract, into: string): Promise<string> {
+  const fee = claimFeeOn(s.net, c);
+  const payer = fee > 0n ? nxsPayer(s, fee) : undefined;
+  if (fee > 0n && !payer) {
+    throw new Error(t('This claim needs a network fee of {fee} NXS and none of your NXS accounts has it', { fee: (Number(fee) / 1e6).toString() }));
+  }
   const state = await node.accountState(into);
-  return node.submit(s.who, s.genesis, (ts) => [creditContract({ debitTxid: c.txid, contract: c.contract, to: { address: into, state }, from: c.from, amount: c.open }, ts)]);
+  const payerState = payer && payer !== into ? await node.accountState(payer) : undefined;
+  return node.submit(s.who, s.genesis, (ts) => {
+    const list = [creditContract({ debitTxid: c.txid, contract: c.contract, to: { address: into, state }, from: c.from, amount: c.open }, ts)];
+    if (payer) {
+      //paying from the account that just received: the fee works on its state after the credit
+      const feeState = payer === into ? { ...state, balance: state.balance + c.open, modified: ts } : payerState!;
+      list.push(feeContract(memoryOfAddress(payer), feeState, fee, ts));
+    }
+    return list;
+  });
 }
 
 //--- the arbiter's decision registers (escrow) ---
@@ -343,10 +377,25 @@ export async function myEscrowIds(node: NexusNode, s: Session): Promise<string[]
 }
 
 /** The person's account in a token ('0' = NXS): their "default" first for NXS, else the first one found */
+//found once per person and token: it reads the person's whole sigchain
+const accountForCache = new Map<string, string | undefined>();
+
 export async function accountFor(node: NexusNode, p: Person, token: string): Promise<string | undefined> {
   if (token === '0' && p.account) {
     return p.account;
   }
+  const key = `${p.genesis}/${token}`;
+  if (accountForCache.has(key)) {
+    return accountForCache.get(key);
+  }
+  const found = await findAccountFor(node, p, token);
+  if (found) {
+    accountForCache.set(key, found);
+  }
+  return found;
+}
+
+async function findAccountFor(node: NexusNode, p: Person, token: string): Promise<string | undefined> {
   const scan = await scanOwnRegisters((m, q) => node.call(m, q), p.genesis);
   for (const r of scan.registers.filter((x) => x.type === 'ACCOUNT')) {
     const s = await node.accountState(r.address).catch(() => null);

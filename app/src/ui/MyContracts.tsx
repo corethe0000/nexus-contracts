@@ -35,6 +35,8 @@ interface Row {
   incoming: boolean;
 }
 
+const autoRefreshMs = 30000;
+
 export function MyContracts({ node, session, active, onWaiting }: { node: NexusNode; session: Session; active: boolean; onWaiting: (n: number) => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
@@ -46,6 +48,16 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
   const [now, setNow] = useState(0);
   const [showClosed, setShowClosed] = useState(false);
   const [hidden, setHidden] = useState(0);
+  //a claimed payment moves into the folded Finished list at once: say so where it stays visible
+  const [flash, setFlash] = useState('');
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showFlash = (text: string) => {
+    setFlash(text);
+    if (flashTimer.current) {
+      clearTimeout(flashTimer.current);
+    }
+    flashTimer.current = setTimeout(() => setFlash(''), 60000);
+  };
   const [myBox, setMyBox] = useState<boolean | null>(null);
   const [codeFor, setCodeFor] = useState('');
   const [codeText, setCodeText] = useState('');
@@ -122,6 +134,15 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
     }
   };
 
+  //while the tab is open, a new block can bring news: look again every half minute
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const timer = setInterval(() => void load(), autoRefreshMs);
+    return () => clearInterval(timer);
+  }, [active, load]);
+
   //once right after sign-in too, so the count on the tab and on the wallet's Overview is there without a visit
   const loadedOnce = useRef(false);
   useEffect(() => {
@@ -171,6 +192,9 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
         () => false,
       );
       setDone((d) => ({ ...d, [key]: ok ? t('Done, transaction {tx} is in a block', { tx: shortId(tx) }) : t('Sent (transaction {tx}), not in a block yet: refresh in a while', { tx: shortId(tx) }) }));
+      if (ok) {
+        showFlash(t('{amount} {ticker} are now in your account. The payment is under Finished.', { amount: formatAmount(r.c.open, r.c.decimals), ticker: r.c.ticker }));
+      }
       await load();
     } catch (e) {
       const m = errorText(e);
@@ -193,6 +217,7 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
       setDone((d) => ({ ...d, [key]: t('Claimed (transaction {tx}), waiting for the next block...', { tx: shortId(tx) }) }));
       await node.waitConfirmed(tx, 1, 300000).catch(() => undefined);
       setDone((d) => ({ ...d, [key]: t('Done, transaction {tx}', { tx: shortId(tx) }) }));
+      showFlash(t('{amount} {ticker} are now in your account. The payment is under Finished.', { amount: formatAmount(r.c.open, r.c.decimals), ticker: r.c.ticker }));
       setCodeFor('');
       setCodeText('');
       await load();
@@ -241,6 +266,7 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
         </span>
       </div>
       {error && <div className="note bad">{error}</div>}
+      {flash && <div className="note good flash">{flash}</div>}
       {hidden > 0 && <p className="muted" style={{ margin: 0, fontSize: 12 }}>{t('{n} DEX swap locks and ordinary payments with an expiry are not shown here: the DEX and the wallet handle them.', { n: hidden })}</p>}
 
       {myBox === false && (
