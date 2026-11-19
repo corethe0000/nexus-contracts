@@ -152,6 +152,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       return;
     }
     setAutoTo({ looking: true });
+    setPayTo('');
     accountFor(node, recipient, payToken)
       .then((a) => {
         if (live) {
@@ -233,7 +234,9 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
   } else if (fromAccount && amount > fromAccount.balance) {
     problems.push('The amount is more than the account holds');
   }
-  if (!payTo.trim()) {
+  if (autoTo.looking) {
+    problems.push("Looking for the recipient's account in this token...");
+  } else if (!payTo.trim()) {
     problems.push('Enter the account the payment goes to');
   } else if (toInfo === 'missing') {
     problems.push('The account it goes to was not found');
