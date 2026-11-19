@@ -330,3 +330,44 @@ export async function accountFor(node: NexusNode, p: Person, token: string): Pro
   }
   return undefined;
 }
+
+/** Contracts in the recent blocks (and the given transactions) that read one of this arbiter's decision registers */
+export async function contractsForEscrows(node: NexusNode, arbiter: string, ids: string[], known: string[] = []): Promise<Map<string, ChainContract[]>> {
+  const byAddress = new Map<string, string>();
+  for (const id of ids) {
+    try {
+      byAddress.set(addressOfMemory(decisionAddress(arbiter, id)), id);
+    } catch {
+      //an id that is not valid has no register
+    }
+  }
+  const out = new Map<string, ChainContract[]>();
+  if (!byAddress.size) {
+    return out;
+  }
+  const txids = new Set(known);
+  for (const b of await recentBlocks((m, p) => node.call(m, p), node.url).catch(() => [])) {
+    for (const tx of b.tx ?? []) {
+      //the node prints each condition: only payments that name the arbiter need a closer look
+      if ((tx.contracts ?? []).some((c: any) => c.OP === 'DEBIT' && String(c.conditions ?? '').toLowerCase().includes(arbiter))) {
+        txids.add(tx.txid);
+      }
+    }
+  }
+  for (const txid of txids) {
+    for (const c of await readContracts(node, txid).catch(() => [] as ChainContract[])) {
+      if (!c.condition) {
+        continue;
+      }
+      const refs = new Map<string, string>();
+      ownerChecks(c.condition, refs);
+      for (const [address, who] of refs) {
+        const id = byAddress.get(address);
+        if (id && who === arbiter) {
+          out.set(id, [...(out.get(id) ?? []), c]);
+        }
+      }
+    }
+  }
+  return out;
+}

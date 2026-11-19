@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
-import { createDecision, decisionState, myEscrowIds, nameFeeOn, reloadAccounts, setDecision, type DecisionState, type Session } from '../lib/chain';
+import { contractsForEscrows, createDecision, decisionState, myEscrowIds, nameFeeOn, reloadAccounts, setDecision, type ChainContract, type DecisionState, type Session } from '../lib/chain';
+import { fmtTime } from '../lib/status';
 import { copyText, errorText, formatAmount } from './common';
 
 const valueNames: Record<number, string> = { 0: 'open', 1: 'released to the recipient', 2: 'refunded to the sender' };
 
 export function Arbiter({ node, session, active }: { node: NexusNode; session: Session; active: boolean }) {
   const [items, setItems] = useState<{ id: string; d: DecisionState }[]>([]);
+  const [uses, setUses] = useState(new Map<string, ChainContract[]>());
   const [newId, setNewId] = useState('');
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
@@ -17,6 +19,7 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
     try {
       const ids = await myEscrowIds(node, session);
       setItems(await Promise.all(ids.map(async (id) => ({ id, d: await decisionState(node, session.genesis, id) }))));
+      setUses(await contractsForEscrows(node, session.genesis, ids));
     } catch (e) {
       setMsg({ error: errorText(e) });
     } finally {
@@ -95,6 +98,7 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
                     copy
                   </button>
                   <div className="meta">{d.exists ? (d.value !== undefined && d.value in valueNames ? valueNames[d.value] : 'unknown value') : 'not found'}</div>
+                  <Payments list={uses.get(id)} />
                 </div>
                 <div className="row">
                   <button disabled={!!busy || d.value === 1} onClick={() => run(`r${id}`, () => setDecision(node, session, id, 1), `Escrow "${id}": released. The recipient can claim now.`)}>
@@ -117,6 +121,22 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
           A decision can be changed until someone claims; after a claim the payment has moved and the decision no longer matters. Use one id per deal.
         </p>
       </section>
+    </div>
+  );
+}
+
+//the payments that wait on this escrow: decide only once the payment is there
+function Payments({ list }: { list?: ChainContract[] }) {
+  if (!list?.length) {
+    return <div className="meta">No payment using this id in the recent blocks yet. Wait for the sender before you decide.</div>;
+  }
+  return (
+    <div className="meta">
+      {list.map((c) => (
+        <div key={`${c.txid}/${c.contract}`}>
+          {formatAmount(c.amount, c.decimals)} {c.ticker} locked {fmtTime(c.time)}: {c.open > 0n ? 'waiting for the claim' : 'already claimed'}
+        </div>
+      ))}
     </div>
   );
 }
