@@ -1,6 +1,6 @@
 # Nexus Contracts
 
-A desktop wallet module for Nexus conditional payments. You lock a payment with your own rules: pick a template (escrow, time-lock, return if unclaimed), or build the rules with blocks or code. The block builder and the code console edit the same contract.
+A desktop wallet module for Nexus conditional payments. You lock a payment with your own rules: pick a template (escrow, time-lock, return if unclaimed, release with a code), or build the rules with blocks or code. The block builder and the code console edit the same contract.
 
 ## How it works
 
@@ -9,6 +9,8 @@ A Nexus payment (DEBIT) can carry a condition. The core checks the condition whe
 Deadlines use `ledger.timestamp`, the time of the best block. The claim's own timestamp can be backdated, so the module never uses it.
 
 An escrow needs a decision register. The arbiter creates it first: a local name `escrow-<id>` holding 0 (open), 1 (release) or 2 (refund). The condition checks both the register's owner and its value. The arbiter can never claim the payment.
+
+Release with a code: the contract holds only the hash of a code. To claim, the recipient writes the code into its own code box (a local name `nxcode`, set up once) and then credits. The chain checks the box as it was in the last block, so the write and the claim are two transactions with a block between them. The box must exist before the payment is sent.
 
 ## Layout
 
@@ -30,7 +32,7 @@ It reuses the transaction code of the browser wallet (`../wallet/src/lib`) and t
   - the encoder reproduces the wallet's expiry condition and the DEX hash lock byte for byte;
   - round trips through bytes, text and blocks;
   - console errors and plain words.
-- `NEXUS_NODE=http://127.0.0.1:7080 npx vitest run src/live.int.test.ts` (private chain, about 4 minutes): each template on chain. Allowed claims are accepted; the others are refused by the core with "conditions not satisfied".
+- `NEXUS_NODE=http://127.0.0.1:7080 npx vitest run src/live.int.test.ts src/live-code.int.test.ts` (private chain, about 4 minutes): each template on chain. Allowed claims are accepted; the others are refused by the core with "conditions not satisfied".
 
 ## Build
 

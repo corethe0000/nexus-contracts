@@ -6,3 +6,4 @@ export { describe, type Labels, type DescribeOptions } from './condition/describ
 export * from './templates';
 export * from './blocks';
 export * from './kind';
+export * from './code';

@@ -20,6 +20,7 @@
   --b-time: #f5b82e;
   --b-decision: #b493f5;
   --b-code: #8ea4b7;
+  --b-secret: #5cc995;
   --radius-s: 8px;
   --radius-l: 14px;
   --mono: ui-monospace, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
@@ -279,7 +280,7 @@ button.small {
 /* templates */
 .templates {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -343,6 +344,9 @@ button.small {
 }
 .chip.code {
   color: var(--b-code);
+}
+.chip.secret {
+  color: var(--b-secret);
 }
 
 .way {
@@ -417,6 +421,9 @@ button.small {
 }
 .block.decision {
   border-left-color: var(--b-decision);
+}
+.block.secret {
+  border-left-color: var(--b-secret);
 }
 
 .block .kind {

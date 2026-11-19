@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { decisionIds, describe, encode, escrow, parse, ParseError, print, returnIfUnclaimed, timeLock, toCondition, toWays, type Block, type Condition, type Way } from '@nexus-contracts/core/src';
+import { codeHash, codeRelease, decisionIds, describe, encode, escrow, newCode, parse, ParseError, print, returnIfUnclaimed, timeLock, toCondition, toWays, type Block, type Condition, type Way } from '@nexus-contracts/core/src';
 import { hexOfMemory } from '../../../../wallet/src/lib/tritium';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
-import { accountFor, blockTime, decisionState, reloadAccounts, sendContract, type DecisionState, type Person, type Session } from '../lib/chain';
+import { accountFor, blockTime, codeBoxState, decisionState, reloadAccounts, sendContract, type DecisionState, type Person, type Session } from '../lib/chain';
 import { decisionKey, fmtTime } from '../lib/status';
 import { Builder } from './Builder';
+import { saveCode } from '../lib/codes';
 import { copyText, errorText, formatAmount, inDays, parseAmount, pasteText, PersonInput, shortId, TimeInput } from './common';
 
-type Template = 'return' | 'timelock' | 'escrow' | 'blank';
+type Template = 'return' | 'timelock' | 'escrow' | 'code' | 'blank';
 
 const templates: { id: Template; name: string; text: string }[] = [
   { id: 'return', name: 'Return if unclaimed', text: 'They claim before a date, after it the payment comes back to you' },
   { id: 'timelock', name: 'Time-lock', text: 'They can claim only from a date on' },
   { id: 'escrow', name: 'Escrow', text: 'A person you both trust decides: release to them or refund to you' },
+  { id: 'code', name: 'Release with a code', text: 'They claim once you give them a code, else it comes back to you' },
   { id: 'blank', name: 'Blank', text: 'Build your own rules with blocks or code' },
 ];
 
@@ -30,6 +32,8 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
   const [arbiterText, setArbiterText] = useState('');
   const [escrowId, setEscrowId] = useState('');
   const [fallback, setFallback] = useState(0);
+  const [releaseCode, setReleaseCode] = useState(() => newCode());
+  const [codeBack, setCodeBack] = useState(() => inDays(14));
   const [ways, setWaysRaw] = useState<Way[]>([[]]);
   const [names, setNames] = useState(() => new Map<string, string>());
   const [code, setCode] = useState('');
@@ -91,10 +95,12 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
         c = returnIfUnclaimed({ sender: me, recipient: recipient.genesis, deadline });
       } else if (template === 'timelock') {
         c = timeLock({ sender: me, recipient: recipient.genesis, unlock, cancelable, returnAfter: returnAfter || undefined });
+      } else if (template === 'code') {
+        c = codeRelease({ sender: me, recipient: recipient.genesis, hash: codeHash(releaseCode), takeBackFrom: codeBack });
       } else {
         c = escrow({ sender: me, recipient: recipient.genesis, arbiter: arbiter!.genesis, id: escrowId, fallback: fallback || undefined });
       }
-      setWays(toWays(c, decisionIds(arbiter ? [{ arbiter: arbiter.genesis, id: escrowId }] : [])));
+      setWays(withCodes(toWays(c, decisionIds(arbiter ? [{ arbiter: arbiter.genesis, id: escrowId }] : [])), [[{ kind: 'secret', genesis: recipient.genesis, hash: Array.from(codeHash(releaseCode), (x) => x.toString(16).padStart(2, '0')).join(''), code: releaseCode }]]));
     } catch (e) {
       setResult({ error: errorText(e) });
     }
@@ -105,10 +111,13 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
       fillFromTemplate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manual, template, templateError, recipient, deadline, unlock, cancelable, returnAfter, arbiter, escrowId, fallback]);
+  }, [manual, template, templateError, recipient, deadline, unlock, cancelable, returnAfter, arbiter, escrowId, fallback, releaseCode, codeBack]);
 
   //--- builder and console stay in step ---
   const known = useMemo(() => ways.flat().filter((b): b is Extract<Block, { kind: 'decision' }> => b.kind === 'decision').map((b) => ({ arbiter: b.arbiter, id: b.id })), [ways]);
+
+  const codeOwners = useMemo(() => [...new Set(ways.flat().flatMap((b) => (b.kind === 'secret' && /^[0-9a-f]{64}$/.test(b.genesis) ? [b.genesis] : [])))], [ways]);
+  const [boxes, setBoxes] = useState(new Map<string, boolean>());
 
   const built = useMemo((): { condition?: Condition; bytes?: Uint8Array; error?: string } => {
     try {
@@ -145,7 +154,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     try {
       const c = parse(text);
       typing.current = true;
-      setWaysRaw(toWays(c, decisionIds(known)));
+      setWaysRaw(withCodes(toWays(c, decisionIds(known)), ways));
       setCodeError(null);
     } catch (e) {
       setCodeError(e instanceof ParseError ? { msg: e.message, pos: e.pos } : { msg: errorText(e) });
@@ -209,8 +218,13 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
           m.set(decisionKey(k.arbiter, k.id), await decisionState(node, k.arbiter, k.id).catch(() => ({ exists: false })));
         }
       }
+      const b = new Map<string, boolean>();
+      for (const g of codeOwners) {
+        b.set(g, (await codeBoxState(node, g).catch(() => ({ exists: true }))).exists);
+      }
       const t = await blockTime(node).catch(() => 0);
       if (live) {
+        setBoxes(b);
         setDecisions(m);
         setChainTime(t);
       }
@@ -218,7 +232,7 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     return () => {
       live = false;
     };
-  }, [known, node]);
+  }, [known, codeOwners, node]);
 
   //--- checks ---
   const labels = useMemo(() => {
@@ -262,6 +276,11 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     problems.push('The account it goes to was not found');
   } else if (toInfo && fromAccount && toInfo.token !== fromAccount.token) {
     problems.push('The account it goes to holds another token');
+  }
+  for (const g of codeOwners) {
+    if (boxes.get(g) === false) {
+      problems.push(`${labels[g] ?? shortId(g)} has no code box yet. They set it up once in My contracts ("Set up code box"); before that the chain would refuse every claim, the take back too.`);
+    }
   }
   for (const k of known) {
     const d = decisions.get(decisionKey(k.arbiter, k.id));
@@ -318,6 +337,11 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
     setResult({});
     try {
       const txid = await sendContract(node, session, { from: fromAccount.address, to: payTo.trim(), amount, condition: built.bytes });
+      for (const b of ways.flat()) {
+        if (b.kind === 'secret' && b.code) {
+          saveCode(session.genesis, b.hash, b.code);
+        }
+      }
       setResult({ ok: txid });
       setSentKey(sendKey);
       setConfirm(false);
@@ -438,6 +462,27 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
                       </button>
                     )}
                   </div>
+                </label>
+              </>
+            )}
+            {template === 'code' && (
+              <>
+                <label className="field">
+                  <span>The code you give them to release it</span>
+                  <div className="row">
+                    <b style={{ fontFamily: 'var(--mono)', fontSize: 16 }}>{releaseCode}</b>
+                    <button className="small" onClick={() => copyText(releaseCode)}>
+                      Copy
+                    </button>
+                    <button className="small" onClick={() => setReleaseCode(newCode())}>
+                      New code
+                    </button>
+                  </div>
+                  <span className="hint">Only its fingerprint goes on chain. Give the code only when you want them to have the payment.</span>
+                </label>
+                <label className="field">
+                  <span>Comes back to you if not claimed, from</span>
+                  <TimeInput value={codeBack} onChange={setCodeBack} />
                 </label>
               </>
             )}
@@ -638,6 +683,20 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
                 </li>
               ))}
             </ul>
+            {ways.flat().some((b) => b.kind === 'secret' && b.code) && (
+              <div className="note warn">
+                Keep the code{' '}
+                {ways
+                  .flat()
+                  .filter((b): b is Extract<Block, { kind: 'secret' }> => b.kind === 'secret' && !!b.code)
+                  .map((b) => (
+                    <b key={b.hash} style={{ fontFamily: 'var(--mono)' }}>
+                      {b.code}{' '}
+                    </b>
+                  ))}
+                safe. You give it to them when you want to release the payment. This module also keeps it on this computer under My contracts.
+              </div>
+            )}
             <p className="muted">The rules cannot be changed after sending. Condition {built.bytes.length} bytes, fingerprint {hexOfMemory(built.bytes.slice(0, 4))}.</p>
             {warnings.length > 0 && <div className="note warn">{warnings.length === 1 ? warnings[0] : `${warnings.length} warnings above: check them first.`}</div>}
             <div className="row spaced">
@@ -677,6 +736,11 @@ function TemplateExplain({ template }: { template: Template }) {
       'The arbiter creates an escrow id first. After the deal, the arbiter says release (the recipient can claim) or refund (you can take it back).',
       'The arbiter can never take the payment. Add a fallback date so it comes back to you if the arbiter never decides.',
     ],
+    code: [
+      'Like an escrow without a third person: you hold the release yourself, as a code.',
+      'You pay now. When you are happy (goods arrived, job done) you give them the code, and they claim with it. If you never give it, the payment comes back to you from the date.',
+      'They need a code box first: a one time setup in their My contracts.',
+    ],
     blank: ['Each way is one set of rules that must all be true. The payment can be claimed by the first way that is true.', 'Mix blocks and code; the code view shows exactly what goes on chain.'],
   };
   return (
@@ -713,4 +777,10 @@ function CodeHelp() {
       </div>
     </div>
   );
+}
+
+//the chain form holds only a code's hash: carry the code text over from blocks that had it
+function withCodes(next: Way[], prev: Way[]): Way[] {
+  const known = new Map(prev.flat().flatMap((b) => (b.kind === 'secret' && b.code ? [[b.hash, b.code] as const] : [])));
+  return next.map((w) => w.map((b) => (b.kind === 'secret' && !b.code && known.has(b.hash) ? { ...b, code: known.get(b.hash) } : b)));
 }

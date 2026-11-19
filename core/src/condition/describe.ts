@@ -2,6 +2,7 @@ import { addressOfMemory, hexOfMemory } from '../../../../wallet/src/lib/tritium
 import type { Condition, Operand } from './ast';
 import type { CompareOp } from './opcodes';
 import { decision, decisionField } from '../templates';
+import { codeBoxAddress, codeBoxField } from '../code';
 
 /** Names to show for known values: genesis hex (as the node prints it) or register address (base58) */
 export type Labels = Record<string, string>;
@@ -113,10 +114,26 @@ function decisionPhrase(a: Condition, b: Condition | undefined, x: Ctx): string 
   return `once ${value(a.right, x.labels)} decides ${v[0] === decision.release ? 'release' : 'refund'}`;
 }
 
+//the code box check: owner == G and sk256(G's code box value) == H
+function codePhrase(a: Condition, b: Condition | undefined): string | null {
+  if (!b || a.kind !== 'compare' || b.kind !== 'compare' || a.left.kind !== 'register' || a.left.field !== 'owner' || a.right.kind !== 'uint256') {
+    return null;
+  }
+  const h = b.left;
+  if (h.kind !== 'hash' || h.of.kind !== 'register' || typeof h.of.field !== 'object' || h.of.field.value !== codeBoxField) {
+    return null;
+  }
+  const g = hexOfMemory(a.right.bytes);
+  if (addressOfMemory(a.left.address) !== addressOfMemory(h.of.address) || addressOfMemory(a.left.address) !== addressOfMemory(codeBoxAddress(g))) {
+    return null;
+  }
+  return 'with the code the sender gives';
+}
+
 function parts(list: Condition[], x: Ctx): string[] {
   const out: string[] = [];
   for (let i = 0; i < list.length; i++) {
-    const d = decisionPhrase(list[i]!, list[i + 1], x);
+    const d = decisionPhrase(list[i]!, list[i + 1], x) ?? codePhrase(list[i]!, list[i + 1]);
     if (d) {
       out.push(d);
       i++;

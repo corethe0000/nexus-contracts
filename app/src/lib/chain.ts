@@ -8,7 +8,7 @@ import { checkCredentials, findGenesis, scanOwnRegisters } from '../../../../wal
 import { recentBlocks } from '../../../../wallet/src/lib/blocks';
 import { conditionOf, parseSlot } from '../../../../wallet/src/lib/htlc';
 import { addressOfMemory, creditContract, debitContract, feeContract, hexOfMemory, memoryOfAddress, memoryOfHex, nameContract, nameFee, namedAddress, nameWriteContract, parseTx } from '../../../../wallet/src/lib/tritium';
-import { contractKind, decisionAddress, decisionName, decode, type Condition, type ContractKind } from '@nexus-contracts/core/src';
+import { codeBoxAddress, codeBoxName, codeSecret, contractKind, decisionAddress, decisionName, decode, type Condition, type ContractKind } from '@nexus-contracts/core/src';
 
 export type { NexusAccount };
 
@@ -370,4 +370,55 @@ export async function contractsForEscrows(node: NexusNode, arbiter: string, ids:
     }
   }
   return out;
+}
+
+//--- code boxes (release with a code) ---
+
+export async function codeBoxState(node: NexusNode, genesis: string): Promise<{ exists: boolean; owner?: string; created?: number; modified?: number; value?: Uint8Array }> {
+  const r = await node.call<any>('register/get/any', { address: addressOfMemory(codeBoxAddress(genesis)) }).catch((e) => {
+    if (e instanceof NodeError) {
+      return null;
+    }
+    throw e;
+  });
+  if (!r) {
+    return { exists: false };
+  }
+  const slot = parseSlot(r);
+  return { exists: true, owner: String(r.owner ?? ''), created: slot.created, modified: slot.modified, value: slot.value };
+}
+
+/** One time: the code box that payments released with a code are claimed through (a name: 1 NXS fee on mainnet) */
+export async function createCodeBox(node: NexusNode, s: Session): Promise<string> {
+  const fee = nameFeeOn(s.net);
+  const payer = fee > 0n ? nxsPayer(s, fee) : undefined;
+  if (fee > 0n && !payer) {
+    throw new Error('The code box is a name: it costs a 1 NXS fee and no NXS account has it');
+  }
+  const state = payer ? await node.accountState(payer) : undefined;
+  return node.submit(s.who, s.genesis, (ts) => {
+    const list = [nameContract(s.genesis, codeBoxName, new Uint8Array(32), false, ts)];
+    if (payer && state) {
+      list.push(feeContract(memoryOfAddress(payer), state, fee, ts));
+    }
+    return list;
+  });
+}
+
+/** Claim with a code: the chain reads the box as of the last block, so the code goes in first, the claim after */
+export async function claimWithCode(node: NexusNode, s: Session, c: ChainContract, code: string, step: (text: string) => void): Promise<string> {
+  const secret = codeSecret(code);
+  const box = await codeBoxState(node, s.genesis);
+  if (!box.exists) {
+    throw new Error('Set up your code box first');
+  }
+  const same = box.value && box.value.length === secret.length && box.value.every((b, i) => b === secret[i]);
+  if (!same) {
+    step('Writing the code into your code box...');
+    const w = await node.submit(s.who, s.genesis, (ts) => [nameWriteContract(s.genesis, codeBoxName, { created: box.created!, modified: box.modified!, address: box.value! }, secret, ts)]);
+    step('Code written, waiting for the next block before claiming...');
+    await node.waitConfirmed(w, 1, 600000);
+  }
+  step('Claiming...');
+  return claim(node, s, c, c.to);
 }

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { describe, print } from '@nexus-contracts/core/src';
+import { codeHash, describe, print, toWays } from '@nexus-contracts/core/src';
+import { savedCodes } from '../lib/codes';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
-import { blockTime, claim, decisionState, discoverEscrows, incomingContracts, readContracts, reloadAccounts, sentContracts, type ChainContract, type DecisionState, type Session } from '../lib/chain';
+import { blockTime, claim, claimWithCode, codeBoxState, createCodeBox, decisionState, discoverEscrows, incomingContracts, readContracts, reloadAccounts, sentContracts, type ChainContract, type DecisionState, type Session } from '../lib/chain';
 import { contractStatus, decisionKey, escrowRefs, fmtTime, type ContractStatus } from '../lib/status';
 import { copyText, errorText, formatAmount, shortId } from './common';
+
+const hexBytes = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 
 const storeKey = (g: string) => `nexus-contracts:watch:${g}`;
 
@@ -41,6 +44,9 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
   const [now, setNow] = useState(0);
   const [showClosed, setShowClosed] = useState(false);
   const [hidden, setHidden] = useState(0);
+  const [myBox, setMyBox] = useState<boolean | null>(null);
+  const [codeFor, setCodeFor] = useState('');
+  const [codeText, setCodeText] = useState('');
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -62,19 +68,32 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
           }
         }
       }
+      //code boxes the contracts read: a missing one fails every way
+      const boxes = new Map<string, boolean>();
+      for (const r of all) {
+        for (const w of r.c.condition ? toWays(r.c.condition) : []) {
+          for (const b of w) {
+            if (b.kind === 'secret' && !boxes.has(b.genesis)) {
+              boxes.set(b.genesis, (await codeBoxState(node, b.genesis)).exists);
+            }
+          }
+        }
+      }
+      setMyBox(boxes.get(session.genesis) ?? (await codeBoxState(node, session.genesis)).exists);
       const myAccounts = new Set(session.accounts.map((a) => a.address));
       //one odd contract (anyone can send one) must not take the whole list down
       const list = all.flatMap((r) => {
         try {
-          return [{ ...r, status: contractStatus(r.c, session.genesis, t, decisions, ids, myAccounts) }];
+          return [{ ...r, status: contractStatus(r.c, session.genesis, t, decisions, ids, myAccounts, boxes) }];
         } catch {
           return [];
         }
       });
-      list.sort((a, b) => Number(b.status.canClaim) - Number(a.status.canClaim) || b.c.time - a.c.time);
+      const ready = (x: Row) => Number(x.status.canClaim || x.status.needsCode);
+      list.sort((a, b) => ready(b) - ready(a) || b.c.time - a.c.time);
       setRows(list);
       setNow(t);
-      onWaiting(list.filter((r) => r.status.canClaim).length);
+      onWaiting(list.filter((r) => r.status.canClaim || r.status.needsCode).length);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -137,6 +156,47 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
     }
   };
 
+  const claimCode = async (r: Row) => {
+    const key = `${r.c.txid}/${r.c.contract}`;
+    const secret = r.status.ways.flatMap((w) => w.way).find((b) => b.kind === 'secret');
+    if (secret?.kind === 'secret' && hexBytes(codeHash(codeText)) !== secret.hash) {
+      setDone((d) => ({ ...d, [key]: 'That is not the code of this payment. Check it with the sender.' }));
+      return;
+    }
+    setActing(key);
+    try {
+      const tx = await claimWithCode(node, session, r.c, codeText, (text) => setDone((d) => ({ ...d, [key]: text })));
+      setDone((d) => ({ ...d, [key]: `Claimed (transaction ${shortId(tx)}), waiting for the next block...` }));
+      await node.waitConfirmed(tx, 1, 300000).catch(() => undefined);
+      setDone((d) => ({ ...d, [key]: `Done, transaction ${shortId(tx)}` }));
+      setCodeFor('');
+      setCodeText('');
+      await load();
+    } catch (e) {
+      const m = errorText(e);
+      setDone((d) => ({ ...d, [key]: /conditions not satisfied/.test(m) ? 'The chain refused the claim: the code was not in your code box yet. Try again in a minute.' : m }));
+    } finally {
+      setActing('');
+    }
+  };
+
+  const setupBox = async () => {
+    setActing('box');
+    setError('');
+    try {
+      const tx = await createCodeBox(node, session);
+      await node.waitConfirmed(tx, 1, 300000).catch(() => undefined);
+      await load();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setActing('');
+    }
+  };
+
+  const codes = savedCodes(session.genesis);
+  const rowProps = { session, acting, onAct: act, codes, codeFor, setCodeFor, codeText, setCodeText, onCode: claimCode };
+
   const open = rows.filter((r) => !r.status.closed);
   const closed = rows.filter((r) => r.status.closed);
   const incoming = open.filter((r) => r.incoming);
@@ -159,12 +219,20 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
       {error && <div className="note bad">{error}</div>}
       {hidden > 0 && <p className="muted" style={{ margin: 0, fontSize: 12 }}>{hidden} DEX swap locks and ordinary payments with an expiry are not shown here: the DEX and the wallet handle them.</p>}
 
+      {myBox === false && (
+        <div className="note row">
+          <span>To receive payments released with a code, set up your code box once{session.net.private || session.net.hybrid ? '' : ' (a name, 1 NXS fee)'}. Senders cannot use the code template for you before that.</span>
+          <button className="small" disabled={acting === 'box'} onClick={setupBox}>
+            {acting === 'box' ? 'Setting up...' : 'Set up code box'}
+          </button>
+        </div>
+      )}
       <section className="card">
         <h2>Sent to you</h2>
         {incoming.length === 0 && <p className="muted">Nothing open. Contracts to your accounts in the last blocks show up here; an older one can be added by its transaction id.</p>}
         <div className="list">
           {incoming.map((r) => (
-            <ContractRow key={`${r.c.txid}/${r.c.contract}`} r={r} session={session} acting={acting} result={done[`${r.c.txid}/${r.c.contract}`]} onAct={act} />
+            <ContractRow key={`${r.c.txid}/${r.c.contract}`} r={r} {...rowProps} result={done[`${r.c.txid}/${r.c.contract}`]} />
           ))}
         </div>
       </section>
@@ -174,7 +242,7 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
         {sent.length === 0 && <p className="muted">No open contracts among your last 100 transactions.</p>}
         <div className="list">
           {sent.map((r) => (
-            <ContractRow key={`${r.c.txid}/${r.c.contract}`} r={r} session={session} acting={acting} result={done[`${r.c.txid}/${r.c.contract}`]} onAct={act} />
+            <ContractRow key={`${r.c.txid}/${r.c.contract}`} r={r} {...rowProps} result={done[`${r.c.txid}/${r.c.contract}`]} />
           ))}
         </div>
       </section>
@@ -190,7 +258,7 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
           {showClosed && (
             <div className="list">
               {closed.map((r) => (
-                <ContractRow key={`${r.c.txid}/${r.c.contract}`} r={r} session={session} acting={acting} onAct={act} />
+                <ContractRow key={`${r.c.txid}/${r.c.contract}`} r={r} {...rowProps} />
               ))}
             </div>
           )}
@@ -200,13 +268,29 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
   );
 }
 
-function ContractRow({ r, session, acting, result, onAct }: { r: Row; session: Session; acting: string; result?: string; onAct: (r: Row) => void }) {
+interface RowProps {
+  r: Row;
+  session: Session;
+  acting: string;
+  result?: string;
+  onAct: (r: Row) => void;
+  codes: Record<string, string>;
+  codeFor: string;
+  setCodeFor: (k: string) => void;
+  codeText: string;
+  setCodeText: (t: string) => void;
+  onCode: (r: Row) => void;
+}
+
+function ContractRow({ r, session, acting, result, onAct, codes, codeFor, setCodeFor, codeText, setCodeText, onCode }: RowProps) {
   const { c, status } = r;
   const key = `${c.txid}/${c.contract}`;
   const ticker = c.ticker;
   const labels: Record<string, string> = { [session.genesis]: 'You' };
   const words = c.condition ? describe(c.condition, { labels, sender: c.sender, time: fmtTime }) : ['A contract form this module cannot read'];
   const iAmSender = c.sender === session.genesis;
+  const secret = status.ways.flatMap((w) => w.way).find((b) => b.kind === 'secret');
+  const sentCode = secret?.kind === 'secret' ? codes[secret.hash] : undefined;
   return (
     <div className="card" style={{ padding: 12 }}>
       <div className="item">
@@ -224,6 +308,11 @@ function ContractRow({ r, session, acting, result, onAct }: { r: Row; session: S
         <div className="row">
           {status.closed && <span className="pill done">finished</span>}
           {!status.closed && status.broken && <span className="pill">cannot be claimed: escrow register missing</span>}
+          {!status.closed && status.needsCode && !status.canClaim && (
+            <button className="primary" disabled={acting === key} onClick={() => setCodeFor(codeFor === key ? '' : key)}>
+              Enter code
+            </button>
+          )}
           {!status.closed && status.canClaim && (
             <button className="primary" disabled={acting === key} onClick={() => onAct(r)}>
               {acting === key ? 'Sending...' : iAmSender ? 'Take back' : 'Claim'}
@@ -234,9 +323,25 @@ function ContractRow({ r, session, acting, result, onAct }: { r: Row; session: S
               {acting === key ? 'Sending...' : 'Try to claim'}
             </button>
           )}
-          {!status.closed && !status.broken && !status.canClaim && !status.maybe && <span className={`pill ${status.waiting.length ? 'wait' : 'done'}`}>{status.waiting.length ? `waiting: ${[...new Set(status.waiting)].join(', ')}` : iAmSender ? 'for the recipient' : 'not for you'}</span>}
+          {!status.closed && !status.broken && !status.canClaim && !status.needsCode && !status.maybe && <span className={`pill ${status.waiting.length ? 'wait' : 'done'}`}>{status.waiting.length ? `waiting: ${[...new Set(status.waiting)].join(', ')}` : iAmSender ? 'for the recipient' : 'not for you'}</span>}
         </div>
       </div>
+      {codeFor === key && (
+        <div className="row spaced">
+          <input value={codeText} onChange={(e) => setCodeText(e.target.value)} placeholder="the code from the sender, e.g. ABCD-EFGH-JKLM-NPQR" spellCheck={false} style={{ flex: '1 1 260px', fontFamily: 'var(--mono)' }} autoFocus />
+          <button className="primary" disabled={acting === key || codeText.replace(/[\s-]/g, '').length < 8} onClick={() => onCode(r)}>
+            {acting === key ? 'Claiming...' : 'Claim with this code'}
+          </button>
+        </div>
+      )}
+      {iAmSender && !status.closed && sentCode && (
+        <div className="note spaced">
+          Code to give when you want to release it: <b style={{ fontFamily: 'var(--mono)' }}>{sentCode}</b>{' '}
+          <button className="link" onClick={() => copyText(sentCode)}>
+            copy
+          </button>
+        </div>
+      )}
       {result && <div className="note spaced">{result}</div>}
       <details className="spaced">
         <summary className="muted">Rules</summary>

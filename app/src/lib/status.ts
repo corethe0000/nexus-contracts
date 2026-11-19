@@ -3,11 +3,12 @@
 import { toWays, decisionIds, type Block, type Way } from '@nexus-contracts/core/src';
 import type { ChainContract, DecisionState } from './chain';
 
-export type WayCheck = { way: Way; mine: boolean; ready: 'yes' | 'no' | 'maybe'; waiting: string[] };
+export type WayCheck = { way: Way; mine: boolean; ready: 'yes' | 'no' | 'maybe'; waiting: string[]; needsCode: boolean };
 
 export interface ContractStatus {
   ways: WayCheck[];
   canClaim: boolean; //a way for me is ready now
+  needsCode: boolean; //a way for me is ready once I enter the sender's code
   maybe: boolean; //a way for me depends on parts only the core can check
   waiting: string[]; //what my ways still wait for
   closed: boolean; //nothing left to claim
@@ -34,6 +35,9 @@ function checkBlock(b: Block, me: string, now: number, decisions: Map<string, De
       const ok = !!d?.exists && d.owner === b.arbiter && d.value === b.value;
       return { ok, wait: ok ? undefined : b.value === 1 ? 'the arbiter to release' : 'the arbiter to refund' };
     }
+    case 'secret':
+      //checked in contractStatus: needs the code from the sender
+      return { ok: true };
     case 'code':
       return { ok: null };
   }
@@ -41,10 +45,10 @@ function checkBlock(b: Block, me: string, now: number, decisions: Map<string, De
 
 //a claim goes into the claimer's own account: a way without a "who" block is open to the owner of the receiving
 //account and to the sender only. A missing decision register fails every way (the core reads every part).
-export function contractStatus(c: ChainContract, me: string, now: number, decisions: Map<string, DecisionState>, escrowIds: { arbiter: string; id: string }[], myAccounts: Set<string>): ContractStatus {
+export function contractStatus(c: ChainContract, me: string, now: number, decisions: Map<string, DecisionState>, escrowIds: { arbiter: string; id: string }[], myAccounts: Set<string>, codeBoxes = new Map<string, boolean>()): ContractStatus {
   const ways = c.condition ? toWays(c.condition, decisionIds(escrowIds)) : [];
   const canReceive = c.sender === me || myAccounts.has(c.to);
-  const missing = ways.flat().some((b) => b.kind === 'decision' && decisions.get(decisionKey(b.arbiter, b.id))?.exists === false);
+  const missing = ways.flat().some((b) => (b.kind === 'decision' && decisions.get(decisionKey(b.arbiter, b.id))?.exists === false) || (b.kind === 'secret' && codeBoxes.get(b.genesis) === false));
   const checks: WayCheck[] = ways.map((way) => {
     const hasWho = way.some((b) => b.kind === 'who');
     const codeWho = way.some((b) => b.kind === 'code' && /caller\.genesis/.test(b.text));
@@ -65,17 +69,22 @@ export function contractStatus(c: ChainContract, me: string, now: number, decisi
         ready = 'maybe';
       }
     }
+    const secret = way.find((b): b is Extract<Block, { kind: 'secret' }> => b.kind === 'secret');
+    if (secret && secret.genesis !== me) {
+      ready = 'no';
+    }
     if (missing) {
       ready = 'no';
-      waiting.push('ended: the escrow register is missing, so the chain refuses every claim');
+      waiting.push('ended: a register it reads is missing, so the chain refuses every claim');
     }
-    return { way, mine: mine && canReceive, ready, waiting };
+    return { way, mine: mine && canReceive, ready, waiting, needsCode: !!secret && secret.genesis === me };
   });
   const minez = checks.filter((w) => w.mine);
   const closed = c.open <= 0n;
   return {
     ways: checks,
-    canClaim: !closed && minez.some((w) => w.ready === 'yes'),
+    canClaim: !closed && minez.some((w) => w.ready === 'yes' && !w.needsCode),
+    needsCode: !closed && minez.some((w) => w.ready === 'yes' && w.needsCode),
     maybe: !closed && minez.some((w) => w.ready === 'maybe'),
     //a way that has ended for good ("ended ...") is not something to wait for
     waiting: minez.flatMap((w) => w.waiting).filter((x) => !x.startsWith('ended')),

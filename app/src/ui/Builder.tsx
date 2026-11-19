@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { newBlock, parse, ParseError, type Block, type Way } from '@nexus-contracts/core/src';
+import { codeHash, newBlock, newCode, parse, ParseError, type Block, type Way } from '@nexus-contracts/core/src';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import type { Session } from '../lib/chain';
-import { PersonInput, TimeInput, errorText } from './common';
+import { copyText, PersonInput, TimeInput, errorText } from './common';
 
 const kindNames: Record<Block['kind'], string> = {
   who: 'Who claims',
   before: 'Before',
   from: 'From',
   decision: 'Arbiter decided',
+  secret: 'Code given',
   code: 'Code',
 };
 
@@ -17,6 +18,7 @@ const kindHelp: Record<Block['kind'], string> = {
   before: 'only before this time (block time)',
   from: 'only from this time on (block time)',
   decision: "the arbiter's decision register says release or refund",
+  secret: 'the claimer must enter a code you give them (it goes into their code box)',
   code: 'any other rule, written as code',
 };
 
@@ -82,7 +84,7 @@ export function Builder({ node, session, ways, setWays, names, onName }: Props) 
         <span className="muted" style={{ fontSize: 12 }}>
           Drag a block into a way, or click to add it to the selected way:
         </span>
-        {(['who', 'before', 'from', 'decision', 'code'] as Block['kind'][]).map((k) => (
+        {(['who', 'before', 'from', 'decision', 'secret', 'code'] as Block['kind'][]).map((k) => (
           <button key={k} className={`chip ${k}`} draggable title={kindHelp[k]} onDragStart={(e) => e.dataTransfer.setData(dragKind, k)} onClick={() => addBlock(focus, k)}>
             + {kindNames[k]}
           </button>
@@ -193,6 +195,44 @@ function BlockEditor(props: { node: NexusNode; session: Session; block: Block; n
             <option value={1}>release</option>
             <option value={2}>refund</option>
           </select>
+        </>
+      )}
+      {b.kind === 'secret' && (
+        <>
+          <PersonInput
+            node={props.node}
+            session={props.session}
+            value={label(b.genesis)}
+            placeholder="whose code box"
+            className=""
+            onPerson={(p, text) => {
+              if (p) {
+                props.onName(p.genesis, p.username ?? text);
+              }
+              onChange({ ...b, genesis: p?.genesis ?? '' });
+            }}
+          />
+          {b.code ? (
+            <span className="row">
+              <b style={{ fontFamily: 'var(--mono)' }}>{b.code}</b>
+              <button className="small" onClick={() => copyText(b.code!)}>
+                Copy
+              </button>
+            </span>
+          ) : (
+            <span className="muted" style={{ fontSize: 12 }}>
+              code not on this device (hash {b.hash.slice(0, 8)}...)
+            </span>
+          )}
+          <button
+            className="small"
+            onClick={() => {
+              const code = newCode();
+              onChange({ ...b, code, hash: Array.from(codeHash(code), (x) => x.toString(16).padStart(2, '0')).join('') });
+            }}
+          >
+            New code
+          </button>
         </>
       )}
       {b.kind === 'code' && <CodeBlock text={b.text} onChange={(text) => onChange({ kind: 'code', text })} />}

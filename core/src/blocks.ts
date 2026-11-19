@@ -5,17 +5,19 @@ import { hexOfMemory, memoryOfHex } from '../../../wallet/src/lib/tritium';
 import { and, compare, or, register, source, u256, u64, type Condition, type Operand } from './condition/ast';
 import { parse, print } from './condition/text';
 import { decisionAddress, decisionField, decisionValue } from './templates';
+import { codeBoxAddress, codeBoxField, codeHash, codeParts, newCode } from './code';
 
 export type Block =
   | { kind: 'who'; genesis: string } //this user claims
   | { kind: 'before'; time: number } //block time is before
   | { kind: 'from'; time: number } //block time is at least
   | { kind: 'decision'; arbiter: string; id: string; value: number } //arbiter's decision register holds value
+  | { kind: 'secret'; genesis: string; hash: string; code?: string } //genesis's code box holds the code of hash (hex); code only in this page
   | { kind: 'code'; text: string }; //any other part, as console text
 
 export type Way = Block[];
 
-export const blockKinds: Block['kind'][] = ['who', 'before', 'from', 'decision', 'code'];
+export const blockKinds: Block['kind'][] = ['who', 'before', 'from', 'decision', 'secret', 'code'];
 
 export function newBlock(kind: Block['kind'], now = Math.floor(Date.now() / 1000)): Block {
   switch (kind) {
@@ -26,10 +28,17 @@ export function newBlock(kind: Block['kind'], now = Math.floor(Date.now() / 1000
       return { kind, time: now + 7 * 86400 };
     case 'decision':
       return { kind, arbiter: '', id: '', value: 1 };
+    case 'secret': {
+      const code = newCode();
+      return { kind, genesis: '', hash: hex(codeHash(code)), code };
+    }
     case 'code':
       return { kind, text: 'ledger.height > 0' };
   }
 }
+
+const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+const unhex = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => parseInt(x, 16));
 
 //--- blocks to condition ---
 
@@ -51,6 +60,14 @@ function blockParts(b: Block): Condition[] {
       const reg = decisionAddress(b.arbiter, b.id);
       return [compare(register(reg, 'owner'), '==', u256(memoryOfHex(b.arbiter))), compare(register(reg, { value: decisionField }), '==', u256(decisionValue(b.value)))];
     }
+    case 'secret':
+      if (!/^[0-9a-f]{64}$/.test(b.genesis)) {
+        throw new Error('pick whose code box holds the code');
+      }
+      if (!/^[0-9a-f]{64}$/.test(b.hash)) {
+        throw new Error('make a code');
+      }
+      return codeParts(b.genesis, unhex(b.hash));
     case 'code': {
       const c = parse(b.text);
       return c.kind === 'and' ? c.items : [c];
@@ -112,6 +129,22 @@ function decisionPair(a: Condition, b: Condition, ids: Map<string, { arbiter: st
   return { kind: 'decision', arbiter, id: known.id, value: v[0]! };
 }
 
+//owner == G and sk256(value("address")) == H on G's own code box
+function secretPair(a: Condition, b: Condition): Block | null {
+  if (a.kind !== 'compare' || b.kind !== 'compare' || a.left.kind !== 'register' || a.left.field !== 'owner' || a.right.kind !== 'uint256' || a.op !== '==' || b.op !== '==') {
+    return null;
+  }
+  const h = b.left;
+  if (h.kind !== 'hash' || h.alg !== 'sk256' || h.of.kind !== 'register' || typeof h.of.field !== 'object' || h.of.field.value !== codeBoxField || b.right.kind !== 'uint256') {
+    return null;
+  }
+  const genesis = hexOfMemory(a.right.bytes);
+  if (!sameBytes(a.left.address, h.of.address) || !sameBytes(a.left.address, codeBoxAddress(genesis))) {
+    return null;
+  }
+  return { kind: 'secret', genesis, hash: hex(b.right.bytes) };
+}
+
 /** Escrow ids the builder knows (from templates or earlier blocks), to show decision registers as blocks */
 export function decisionIds(list: { arbiter: string; id: string }[]): Map<string, { arbiter: string; id: string }> {
   return new Map(list.filter((x) => /^[0-9a-f]{64}$/.test(x.arbiter) && x.id).map((x) => [hexOfMemory(decisionAddress(x.arbiter, x.id)), x]));
@@ -125,7 +158,7 @@ export function toWays(c: Condition, ids = new Map<string, { arbiter: string; id
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i]!;
       const next = parts[i + 1];
-      const pair = next ? decisionPair(p, next, ids) : null;
+      const pair = next ? (decisionPair(p, next, ids) ?? secretPair(p, next)) : null;
       if (pair) {
         out.push(pair);
         i++;

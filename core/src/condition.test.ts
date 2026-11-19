@@ -8,6 +8,7 @@ import { describe } from './condition/describe';
 import { decisionAddress, escrow, returnIfUnclaimed, timeLock } from './templates';
 import { decisionIds, toCondition, toWays } from './blocks';
 import { contractKind } from './kind';
+import { codeHash, codeRelease, newCode } from './code';
 
 const alice = 'a1'.repeat(32);
 const bob = 'b2'.repeat(32);
@@ -198,5 +199,27 @@ suite('wording', () => {
     const c = parse('ledger.height > 1');
     expect(describe(c)[0]).toBe('The recipient or the sender can claim if the block height is above 1');
     expect(describe(c, { labels: { [alice]: 'You' }, sender: alice })[0]).toBe('The recipient or you can claim if the block height is above 1');
+  });
+});
+
+suite('release with a code', () => {
+  it('makes readable codes that survive typing differences', () => {
+    const c = newCode();
+    expect(c).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(hex(codeHash(c))).toBe(hex(codeHash(c.toLowerCase().replace(/-/g, ' '))));
+    expect(hex(codeHash(c))).not.toBe(hex(codeHash(newCode())));
+  });
+
+  it('round trips through bytes, text and blocks, and reads in plain words', () => {
+    const code = 'ABCD-EFGH-JKLM-NPQR';
+    const c = codeRelease({ sender: alice, recipient: bob, hash: codeHash(code), takeBackFrom: 1790000000 });
+    const bytes = encode(c);
+    expect(hex(encode(decode(bytes)))).toBe(hex(bytes));
+    expect(hex(encode(parse(print(c))))).toBe(hex(bytes));
+    const ways = toWays(c);
+    expect(ways[0]!.map((b) => b.kind)).toEqual(['who', 'secret']);
+    expect(hex(encode(toCondition(ways)))).toBe(hex(bytes));
+    expect(describe(c, { labels: { [alice]: 'You', [bob]: 'Bob' }, sender: alice, time: () => 'then' })).toEqual(['Bob can claim with the code the sender gives', 'You can take it back from then']);
+    expect(contractKind(c)).toBe('contract');
   });
 });

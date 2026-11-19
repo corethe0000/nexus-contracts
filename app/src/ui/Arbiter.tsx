@@ -44,6 +44,7 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
         () => false,
       );
       setMsg(inBlock ? { ok } : { ok: `Sent, not in a block yet: refresh in a while. ${ok}` });
+      setBusy('');
       after?.();
       await reloadAccounts(node, session).catch(() => undefined);
       await load();
