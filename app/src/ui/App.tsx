@@ -1,4 +1,5 @@
-import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Component, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { publishOverview } from '../lib/overview';
 import { routeLinksOutside } from '../../../../dex/app/src/lib/module';
 import { makeNode, signIn, type Session } from '../lib/chain';
 import { NewContract } from './NewContract';
@@ -14,6 +15,11 @@ export function App() {
   const [waiting, setWaiting] = useState(0);
 
   useEffect(() => routeLinksOutside(), []);
+
+  const onWaiting = useCallback((n: number) => {
+    setWaiting(n);
+    publishOverview(n, 'contract payments are ready for you to claim');
+  }, []);
 
   if (!session) {
     return <SignIn onIn={(s) => setSession(s)} node={node} />;
@@ -52,7 +58,7 @@ export function App() {
       </div>
       <div hidden={tab !== 'mine'}>
         <Guard>
-          <MyContracts node={node} session={session} active={tab === 'mine'} onWaiting={setWaiting} />
+          <MyContracts node={node} session={session} active={tab === 'mine'} onWaiting={onWaiting} />
         </Guard>
       </div>
       <div hidden={tab !== 'arbiter'}>

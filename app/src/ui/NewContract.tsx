@@ -6,6 +6,7 @@ import { accountFor, blockTime, codeBoxState, decisionState, reloadAccounts, sen
 import { decisionKey, fmtTime } from '../lib/status';
 import { Builder } from './Builder';
 import { saveCode } from '../lib/codes';
+import { shareText } from '../lib/share';
 import { copyText, errorText, formatAmount, inDays, parseAmount, pasteText, PersonInput, shortId, TimeInput } from './common';
 
 type Template = 'return' | 'timelock' | 'escrow' | 'code' | 'blank';
@@ -646,8 +647,8 @@ export function NewContract({ node, session, onSent }: { node: NexusNode; sessio
           {result.ok && (
             <div className="note good spaced">
               Sent. Transaction {shortId(result.ok)}{' '}
-              <button className="link" onClick={() => copyText(result.ok!)}>
-                copy id
+              <button className="link" onClick={() => copyText(shareText(result.ok!))} title="Copies a message for the recipient, so they can find this payment">
+                copy a message for the recipient
               </button>{' '}
               <button className="link" onClick={onSent}>
                 see My contracts

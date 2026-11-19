@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { codeHash, describe, print, toWays } from '@nexus-contracts/core/src';
 import { savedCodes } from '../lib/codes';
+import { shareText, txidFrom } from '../lib/share';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import { blockTime, claim, claimWithCode, codeBoxState, createCodeBox, decisionState, discoverEscrows, incomingContracts, readContracts, reloadAccounts, sentContracts, type ChainContract, type DecisionState, type Session } from '../lib/chain';
 import { contractStatus, decisionKey, escrowRefs, fmtTime, type ContractStatus } from '../lib/status';
@@ -101,16 +102,19 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
     }
   }, [node, session, watched, onWaiting]);
 
+  //once right after sign-in too, so the count on the tab and on the wallet's Overview is there without a visit
+  const loadedOnce = useRef(false);
   useEffect(() => {
-    if (active) {
+    if (active || !loadedOnce.current) {
+      loadedOnce.current = true;
       void load();
     }
   }, [active, load]);
 
   const add = async () => {
-    const t = addText.trim().toLowerCase();
-    if (!/^[0-9a-f]{128}$/.test(t)) {
-      setError('A transaction id is 128 hex digits');
+    const t = txidFrom(addText);
+    if (!t) {
+      setError('No contract id found: paste the message the sender shared, or a 128 digit transaction id');
       return;
     }
     try {
@@ -210,7 +214,7 @@ export function MyContracts({ node, session, active, onWaiting }: { node: NexusN
         </button>
         {now > 0 && <span className="muted">Block time {fmtTime(now)}</span>}
         <span style={{ marginLeft: 'auto' }} className="row">
-          <input value={addText} onChange={(e) => setAddText(e.target.value)} placeholder="add a contract by transaction id" spellCheck={false} style={{ width: 300 }} />
+          <input value={addText} onChange={(e) => setAddText(e.target.value)} placeholder="paste a shared contract or a transaction id" spellCheck={false} style={{ width: 320 }} onKeyDown={(e) => e.key === 'Enter' && add()} />
           <button onClick={add} disabled={!addText.trim()}>
             Add
           </button>
@@ -300,14 +304,14 @@ function ContractRow({ r, session, acting, result, onAct, codes, codeFor, setCod
           </div>
           <div className="meta">
             {iAmSender ? `to account ${shortId(c.to)}` : `from user ${shortId(c.sender)}`} . {fmtTime(c.time)} .{' '}
-            <button className="link" style={{ fontSize: 12 }} onClick={() => copyText(c.txid)}>
-              copy transaction id
+            <button className="link" style={{ fontSize: 12 }} onClick={() => copyText(iAmSender ? shareText(c.txid) : c.txid)} title={iAmSender ? 'Copies a message to send to the recipient, so they can find this payment' : undefined}>
+              {iAmSender ? 'share with the recipient' : 'copy transaction id'}
             </button>
           </div>
         </div>
         <div className="row">
           {status.closed && <span className="pill done">finished</span>}
-          {!status.closed && status.broken && <span className="pill">cannot be claimed: escrow register missing</span>}
+          {!status.closed && status.broken && <span className="pill">cannot be claimed: a register it reads is missing</span>}
           {!status.closed && status.needsCode && !status.canClaim && (
             <button className="primary" disabled={acting === key} onClick={() => setCodeFor(codeFor === key ? '' : key)}>
               Enter code
