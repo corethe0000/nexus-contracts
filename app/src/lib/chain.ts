@@ -4,10 +4,11 @@
 import { NexusNode, NodeError, type Credentials } from '../../../../dex/core/src/nexus/node';
 import { nodeFor, inWallet } from '../../../../dex/app/src/lib/module';
 import { network, refresh, type NexusAccount, type NexusNet } from '../../../../dex/app/src/lib/nexus';
-import { checkCredentials, findGenesis, scanOwnRegisters } from '../../../../wallet/src/lib/profile-chain';
+import { checkCredentials, findGenesis, scanOwnRegisters, type RegisterScan } from '../../../../wallet/src/lib/profile-chain';
 import { recentBlocks } from '../../../../wallet/src/lib/blocks';
 import { conditionOf, parseSlot } from '../../../../wallet/src/lib/htlc';
 import { addressOfMemory, creditContract, debitContract, feeContract, hexOfMemory, memoryOfAddress, memoryOfHex, nameContract, nameFee, namedAddress, nameWriteContract, parseTx } from '../../../../wallet/src/lib/tritium';
+import { t } from './i18n';
 import { codeBoxAddress, codeBoxName, codeSecret, contractKind, decisionAddress, decisionName, decode, type Condition, type ContractKind } from '@nexus-contracts/core/src';
 
 export type { NexusAccount };
@@ -24,6 +25,7 @@ export interface Session {
   who: Credentials;
   accounts: NexusAccount[];
   net: NexusNet;
+  scan?: RegisterScan; //own registers found so far, so later reads only go through what is new
 }
 
 export async function signIn(node: NexusNode, username: string, password: string, pin: string): Promise<Session> {
@@ -37,9 +39,13 @@ export async function signIn(node: NexusNode, username: string, password: string
 }
 
 export async function reloadAccounts(node: NexusNode, s: Session): Promise<void> {
-  const p = { username: s.username, genesis: s.genesis, accounts: [] as NexusAccount[], slotReady: false, signer: null as never, via: 'page' as const };
+  const p = { username: s.username, genesis: s.genesis, accounts: [] as NexusAccount[], slotReady: false, signer: null as never, via: 'page' as const, scan: s.scan };
   await refresh(node, p);
-  s.accounts = p.accounts;
+  //an account read that failed this time (busy node) drops out of the list: keep the one known before
+  const found = new Set(p.accounts.map((a) => a.address));
+  const own = new Set((p.scan?.registers ?? []).map((r) => r.address));
+  s.accounts = [...p.accounts, ...s.accounts.filter((a) => !found.has(a.address) && own.has(a.address))];
+  s.scan = p.scan;
 }
 
 //names cost a fee on mainnet and testnet, none on hybrid / private chains
@@ -55,16 +61,16 @@ export interface Person {
 
 /** A username or a 64 digit genesis id */
 export async function findPerson(node: NexusNode, s: Session, text: string): Promise<Person> {
-  const t = text.trim();
-  if (/^[0-9a-f]{64}$/i.test(t)) {
-    const genesis = t.toLowerCase();
+  const q = text.trim();
+  if (/^[0-9a-f]{64}$/i.test(q)) {
+    const genesis = q.toLowerCase();
     return { genesis, account: await defaultAccount(node, genesis) };
   }
-  if (!t) {
-    throw new Error('Enter a username');
+  if (!q) {
+    throw new Error(t('Enter a username'));
   }
-  const { genesis } = await findGenesis((m, p) => node.call(m, p), t, s.net.testnet || s.net.private);
-  return { username: t, genesis, account: await defaultAccount(node, genesis) };
+  const { genesis } = await findGenesis((m, p) => node.call(m, p), q, s.net.testnet || s.net.private);
+  return { username: q, genesis, account: await defaultAccount(node, genesis) };
 }
 
 async function defaultAccount(node: NexusNode, genesis: string): Promise<string | undefined> {
@@ -122,7 +128,7 @@ export async function createDecision(node: NexusNode, s: Session, id: string): P
   const fee = nameFeeOn(s.net);
   const payer = fee > 0n ? nxsPayer(s, fee) : undefined;
   if (fee > 0n && !payer) {
-    throw new Error('A decision register costs a 1 NXS name fee: no NXS account has it');
+    throw new Error(t('A decision register costs a 1 NXS name fee: no NXS account has it'));
   }
   const state = payer ? await node.accountState(payer) : undefined;
   return node.submit(s.who, s.genesis, (ts) => {
@@ -137,7 +143,7 @@ export async function createDecision(node: NexusNode, s: Session, id: string): P
 export async function setDecision(node: NexusNode, s: Session, id: string, value: number): Promise<string> {
   const d = await decisionState(node, s.genesis, id);
   if (!d.exists) {
-    throw new Error('This escrow id has no decision register yet');
+    throw new Error(t('This escrow id has no decision register yet'));
   }
   const v = new Uint8Array(32);
   v[0] = value;
@@ -166,14 +172,23 @@ export interface ChainContract {
 const addressOf = (v: unknown) => (typeof v === 'object' && v ? (v as { address?: string }).address : (v as string | undefined)) ?? '';
 
 const tokenCache = new Map<string, { decimals: number; ticker: string }>();
+const accountTokens = new Map<string, { token: string; decimals: number; ticker: string }>();
+//the node prints a DEBIT's condition in its summaries: only those with one are contracts
+const hasCondition = (c: any) => c.OP === 'DEBIT' && String(c.conditions ?? '').trim() !== '';
 async function tokenOf(node: NexusNode, account: string): Promise<{ token: string; decimals: number; ticker: string }> {
-  //no guessing: a wrong number of decimals would scale the amount
+  //an account never changes its token: one read per account. No guessing: wrong decimals would scale the amount
+  const known = accountTokens.get(account);
+  if (known) {
+    return known;
+  }
   const st = await node.accountState(account);
   if (!tokenCache.has(st.token)) {
     const t = st.token === '0' ? null : await node.call<any>('register/get/any', { address: st.token }).catch(() => null);
     tokenCache.set(st.token, { decimals: st.decimals, ticker: st.token === '0' ? 'NXS' : String(t?.ticker ?? t?.name ?? 'token') });
   }
-  return { token: st.token, ...tokenCache.get(st.token)! };
+  const out = { token: st.token, ...tokenCache.get(st.token)! };
+  accountTokens.set(account, out);
+  return out;
 }
 
 //a contract is vec(operation) vec(condition) vec(register); DEBIT = op byte, from 32, to 32, amount u64 LE
@@ -198,9 +213,19 @@ function decimalToBase(v: unknown, decimals: number): bigint {
 }
 
 /** Every DEBIT with a condition in one transaction */
-export async function readContracts(node: NexusNode, txid: string): Promise<ChainContract[]> {
-  const [tx, raw] = await Promise.all([node.call<any>('ledger/get/transaction', { hash: txid, verbose: 'summary' }), node.call<{ data: string }>('ledger/get/transaction', { hash: txid, format: 'raw' })]);
-  const parsed = parseTx(raw.data);
+//a transaction's bytes never change: read once. Its summary carries what is still open, so it is read fresh
+//(or taken from a list read just now)
+const rawCache = new Map<string, ReturnType<typeof parseTx>>();
+
+export async function readContracts(node: NexusNode, txid: string, summary?: any): Promise<ChainContract[]> {
+  const cached = rawCache.get(txid);
+  const [tx, parsed] = await Promise.all([
+    summary ?? node.call<any>('ledger/get/transaction', { hash: txid, verbose: 'summary' }),
+    cached ?? node.call<{ data: string }>('ledger/get/transaction', { hash: txid, format: 'raw' }).then((r) => parseTx(r.data)),
+  ]);
+  if (!cached) {
+    rawCache.set(txid, parsed);
+  }
   const out: ChainContract[] = [];
   for (const c of tx.contracts ?? []) {
     if (c.OP !== 'DEBIT') {
@@ -231,8 +256,8 @@ export async function readContracts(node: NexusNode, txid: string): Promise<Chai
 /** Contracts this profile sent, from its newest transactions */
 export async function sentContracts(node: NexusNode, s: Session, limit = 100): Promise<ChainContract[]> {
   const list = await node.call<any[]>('ledger/list/transactions', { genesis: s.genesis, limit, verbose: 'summary' }).catch(() => []);
-  const txids = list.filter((t) => (t.contracts ?? []).some((c: any) => c.OP === 'DEBIT')).map((t) => t.txid as string);
-  const all = await Promise.all(txids.map((t) => readContracts(node, t).catch(() => [])));
+  const withRules = list.filter((t) => (t.contracts ?? []).some(hasCondition));
+  const all = await Promise.all(withRules.map((t) => readContracts(node, t.txid, t).catch(() => [])));
   return all.flat();
 }
 
@@ -242,7 +267,7 @@ export async function incomingContracts(node: NexusNode, s: Session, known: stri
   const txids = new Set(known);
   for (const b of await recentBlocks((m, p) => node.call(m, p), node.url).catch(() => [])) {
     for (const tx of b.tx ?? []) {
-      if ((tx.contracts ?? []).some((c: any) => c.OP === 'DEBIT' && mine.has(addressOf(c.to)))) {
+      if ((tx.contracts ?? []).some((c: any) => hasCondition(c) && mine.has(addressOf(c.to)))) {
         txids.add(tx.txid);
       }
     }
@@ -304,7 +329,8 @@ export async function discoverEscrows(node: NexusNode, contracts: ChainContract[
 
 /** The escrow ids this profile is arbiter of: its own escrow-<id> names */
 export async function myEscrowIds(node: NexusNode, s: Session): Promise<string[]> {
-  const scan = await scanOwnRegisters((m, p) => node.call(m, p), s.genesis);
+  const scan = await scanOwnRegisters((m, p) => node.call(m, p), s.genesis, s.scan);
+  s.scan = scan;
   const names = scan.registers.filter((r) => r.type === 'NAME' || r.name?.startsWith('escrow-'));
   const ids: string[] = [];
   for (const r of names) {
@@ -393,7 +419,7 @@ export async function createCodeBox(node: NexusNode, s: Session): Promise<string
   const fee = nameFeeOn(s.net);
   const payer = fee > 0n ? nxsPayer(s, fee) : undefined;
   if (fee > 0n && !payer) {
-    throw new Error('The code box is a name: it costs a 1 NXS fee and no NXS account has it');
+    throw new Error(t('The code box is a name: it costs a 1 NXS fee and no NXS account has it'));
   }
   const state = payer ? await node.accountState(payer) : undefined;
   return node.submit(s.who, s.genesis, (ts) => {
@@ -410,15 +436,15 @@ export async function claimWithCode(node: NexusNode, s: Session, c: ChainContrac
   const secret = codeSecret(code);
   const box = await codeBoxState(node, s.genesis);
   if (!box.exists) {
-    throw new Error('Set up your code box first');
+    throw new Error(t('Set up your code box first'));
   }
   const same = box.value && box.value.length === secret.length && box.value.every((b, i) => b === secret[i]);
   if (!same) {
-    step('Writing the code into your code box...');
+    step(t('Writing the code into your code box...'));
     const w = await node.submit(s.who, s.genesis, (ts) => [nameWriteContract(s.genesis, codeBoxName, { created: box.created!, modified: box.modified!, address: box.value! }, secret, ts)]);
-    step('Code written, waiting for the next block before claiming...');
+    step(t('Code written, waiting for the next block before claiming...'));
     await node.waitConfirmed(w, 1, 600000);
   }
-  step('Claiming...');
+  step(t('Claiming...'));
   return claim(node, s, c, c.to);
 }

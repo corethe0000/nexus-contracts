@@ -3,24 +3,26 @@ import { codeHash, newBlock, newCode, parse, ParseError, type Block, type Way } 
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import type { Session } from '../lib/chain';
 import { copyText, PersonInput, TimeInput, errorText } from './common';
+import { t } from '../lib/i18n';
 
-const kindNames: Record<Block['kind'], string> = {
-  who: 'Who claims',
-  before: 'Before',
-  from: 'From',
-  decision: 'Arbiter decided',
-  secret: 'Code given',
-  code: 'Code',
-};
+//functions, so the texts follow the language set at start
+const kindNames = (): Record<Block['kind'], string> => ({
+  who: t('Who claims'),
+  before: t('Before'),
+  from: t('From'),
+  decision: t('Arbiter decided'),
+  secret: t('Code given'),
+  code: t('Code'),
+});
 
-const kindHelp: Record<Block['kind'], string> = {
-  who: 'only this person can use this way',
-  before: 'only before this time (block time)',
-  from: 'only from this time on (block time)',
-  decision: "the arbiter's decision register says release or refund",
-  secret: 'the claimer must enter a code you give them (it goes into their code box)',
-  code: 'any other rule, written as code',
-};
+const kindHelp = (): Record<Block['kind'], string> => ({
+  who: t('only this person can use this way'),
+  before: t('only before this time (block time)'),
+  from: t('only from this time on (block time)'),
+  decision: t("the arbiter's decision register says release or refund"),
+  secret: t('the claimer must enter a code you give them (it goes into their code box)'),
+  code: t('any other rule, written as code'),
+});
 
 const dragKind = 'text/x-contract-block';
 const dragMove = 'text/x-contract-move';
@@ -37,6 +39,8 @@ interface Props {
 export function Builder({ node, session, ways, setWays, names, onName }: Props) {
   const [focus, setFocus] = useState(0);
   const [over, setOver] = useState<number | null>(null);
+  const kinds = kindNames();
+  const help = kindHelp();
 
   const update = (wi: number, fn: (w: Way) => Way) => setWays(ways.map((w, i) => (i === wi ? fn(w) : w)));
   const setBlock = (wi: number, bi: number, b: Block) => update(wi, (w) => w.map((x, i) => (i === bi ? b : x)));
@@ -82,18 +86,18 @@ export function Builder({ node, session, ways, setWays, names, onName }: Props) 
     <div>
       <div className="palette">
         <span className="muted" style={{ fontSize: 12 }}>
-          Drag a block into a way, or click to add it to the selected way:
+          {t('Drag a block into a way, or click to add it to the selected way:')}
         </span>
         {(['who', 'before', 'from', 'decision', 'secret', 'code'] as Block['kind'][]).map((k) => (
-          <button key={k} className={`chip ${k}`} draggable title={kindHelp[k]} onDragStart={(e) => e.dataTransfer.setData(dragKind, k)} onClick={() => addBlock(focus, k)}>
-            + {kindNames[k]}
+          <button key={k} className={`chip ${k}`} draggable title={help[k]} onDragStart={(e) => e.dataTransfer.setData(dragKind, k)} onClick={() => addBlock(focus, k)}>
+            + {kinds[k]}
           </button>
         ))}
       </div>
 
       {ways.map((way, wi) => (
         <div key={wi}>
-          {wi > 0 && <div className="or">OR</div>}
+          {wi > 0 && <div className="or">{t('OR')}</div>}
           <div
             className={`way ${over === wi ? 'over' : ''} ${focus === wi ? 'focus' : ''}`}
             onClick={() => setFocus(wi)}
@@ -105,27 +109,27 @@ export function Builder({ node, session, ways, setWays, names, onName }: Props) 
             onDrop={(e) => drop(wi, e)}
           >
             <div className="way-head">
-              <b>Way {wi + 1} to claim</b>
-              <span>all blocks must be true</span>
+              <b>{t('Way {n} to claim', { n: wi + 1 })}</b>
+              <span>{t('all blocks must be true')}</span>
               <span className="end">
                 {ways.length > 1 && (
                   <button className="small" onClick={() => setWays(ways.filter((_, i) => i !== wi))}>
-                    Remove way
+                    {t('Remove way')}
                   </button>
                 )}
               </span>
             </div>
-            {way.length === 0 && <div className="drop-hint">Drop blocks here</div>}
+            {way.length === 0 && <div className="drop-hint">{t('Drop blocks here')}</div>}
             {way.map((b, bi) => (
               <div key={bi}>
-                {bi > 0 && <div className="and">AND</div>}
+                {bi > 0 && <div className="and">{t('AND')}</div>}
                 <BlockEditor node={node} session={session} block={b} names={names} onName={onName} onChange={(nb) => setBlock(wi, bi, nb)} onRemove={() => removeBlock(wi, bi)} dragId={`${wi}:${bi}`} />
               </div>
             ))}
           </div>
         </div>
       ))}
-      <div className="or">OR</div>
+      <div className="or">{t('OR')}</div>
       <div
         className={`drop-hint ${over === -1 ? 'way over' : ''}`}
         onDragOver={(e) => {
@@ -135,7 +139,7 @@ export function Builder({ node, session, ways, setWays, names, onName }: Props) 
         onDragLeave={() => setOver(null)}
         onDrop={(e) => drop('new', e)}
       >
-        Drop a block here for a new way, or{' '}
+        {t('Drop a block here for a new way, or')}{' '}
         <button
           className="link"
           onClick={() => {
@@ -143,7 +147,7 @@ export function Builder({ node, session, ways, setWays, names, onName }: Props) 
             setFocus(ways.length);
           }}
         >
-          add an empty way
+          {t('add an empty way')}
         </button>
       </div>
     </div>
@@ -152,14 +156,16 @@ export function Builder({ node, session, ways, setWays, names, onName }: Props) 
 
 function BlockEditor(props: { node: NexusNode; session: Session; block: Block; names: Map<string, string>; onName: (g: string, l: string) => void; onChange: (b: Block) => void; onRemove: () => void; dragId: string }) {
   const { block: b, onChange, names } = props;
+  const kindName = kindNames()[b.kind];
+  const help = kindHelp()[b.kind];
   const label = (g: string) => (g ? (g === props.session.genesis ? props.session.username : (names.get(g) ?? g)) : '');
   return (
     <div className={`block ${b.kind}`}>
-      <span className="grip" draggable title="Drag to another way" onDragStart={(e) => e.dataTransfer.setData(dragMove, props.dragId)}>
+      <span className="grip" draggable title={t('Drag to another way')} onDragStart={(e) => e.dataTransfer.setData(dragMove, props.dragId)}>
         ::
       </span>
-      <span className="kind" title={kindHelp[b.kind]}>
-        {kindNames[b.kind]}
+      <span className="kind" title={help}>
+        {kindName}
       </span>
       {b.kind === 'who' && (
         <PersonInput
@@ -181,7 +187,7 @@ function BlockEditor(props: { node: NexusNode; session: Session; block: Block; n
             node={props.node}
             session={props.session}
             value={label(b.arbiter)}
-            placeholder="arbiter"
+            placeholder={t('arbiter')}
             className=""
             onPerson={(p, text) => {
               if (p) {
@@ -190,10 +196,10 @@ function BlockEditor(props: { node: NexusNode; session: Session; block: Block; n
               onChange({ ...b, arbiter: p?.genesis ?? '' });
             }}
           />
-          <input placeholder="escrow id" value={b.id} onChange={(e) => onChange({ ...b, id: e.target.value.toLowerCase() })} style={{ width: 130 }} spellCheck={false} />
+          <input placeholder={t('escrow id')} value={b.id} onChange={(e) => onChange({ ...b, id: e.target.value.toLowerCase() })} style={{ width: 130 }} spellCheck={false} />
           <select value={b.value} onChange={(e) => onChange({ ...b, value: Number(e.target.value) })}>
-            <option value={1}>release</option>
-            <option value={2}>refund</option>
+            <option value={1}>{t('release')}</option>
+            <option value={2}>{t('refund')}</option>
           </select>
         </>
       )}
@@ -203,7 +209,7 @@ function BlockEditor(props: { node: NexusNode; session: Session; block: Block; n
             node={props.node}
             session={props.session}
             value={label(b.genesis)}
-            placeholder="whose code box"
+            placeholder={t('whose code box')}
             className=""
             onPerson={(p, text) => {
               if (p) {
@@ -216,12 +222,12 @@ function BlockEditor(props: { node: NexusNode; session: Session; block: Block; n
             <span className="row">
               <b style={{ fontFamily: 'var(--mono)' }}>{b.code}</b>
               <button className="small" onClick={() => copyText(b.code!)}>
-                Copy
+                {t('Copy')}
               </button>
             </span>
           ) : (
             <span className="muted" style={{ fontSize: 12 }}>
-              code not on this device (hash {b.hash.slice(0, 8)}...)
+              {t('code not on this device (hash {hash}...)', { hash: b.hash.slice(0, 8) })}
             </span>
           )}
           <button
@@ -231,12 +237,12 @@ function BlockEditor(props: { node: NexusNode; session: Session; block: Block; n
               onChange({ ...b, code, hash: Array.from(codeHash(code), (x) => x.toString(16).padStart(2, '0')).join('') });
             }}
           >
-            New code
+            {t('New code')}
           </button>
         </>
       )}
       {b.kind === 'code' && <CodeBlock text={b.text} onChange={(text) => onChange({ kind: 'code', text })} />}
-      <button className="x" onClick={props.onRemove} aria-label="Remove block" title="Remove block">
+      <button className="x" onClick={props.onRemove} aria-label={t('Remove block')} title={t('Remove block')}>
         x
       </button>
     </div>
@@ -248,7 +254,7 @@ function CodeBlock({ text, onChange }: { text: string; onChange: (t: string) => 
   try {
     parse(text);
   } catch (e) {
-    error = e instanceof ParseError ? `${e.message} (at ${e.pos + 1})` : errorText(e);
+    error = e instanceof ParseError ? `${e.message} ${t('(at {n})', { n: e.pos + 1 })}` : errorText(e);
   }
   return (
     <>

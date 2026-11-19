@@ -2,6 +2,7 @@
 //decision, the same parts the core checks. A way with a code block is shown as "maybe" (the core decides).
 import { toWays, decisionIds, type Block, type Way } from '@nexus-contracts/core/src';
 import type { ChainContract, DecisionState } from './chain';
+import { intlLocale, t } from './i18n';
 
 export type WayCheck = { way: Way; mine: boolean; ready: 'yes' | 'no' | 'maybe'; waiting: string[]; needsCode: boolean };
 
@@ -16,24 +17,24 @@ export interface ContractStatus {
 }
 
 //beyond the date range (anyone can put any number in a contract) the plain number is shown
-export const fmtTime = (t: number) => (Math.abs(t) > 8.64e12 ? `time ${t}` : new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }));
+export const fmtTime = (seconds: number) => (Math.abs(seconds) > 8.64e12 ? t('time {n}', { n: seconds }) : new Date(seconds * 1000).toLocaleString(intlLocale(), { dateStyle: 'medium', timeStyle: 'short' }));
 
 export function decisionKey(arbiter: string, id: string) {
   return `${arbiter}/${id}`;
 }
 
-function checkBlock(b: Block, me: string, now: number, decisions: Map<string, DecisionState>): { ok: boolean | null; mine?: boolean; wait?: string } {
+function checkBlock(b: Block, me: string, now: number, decisions: Map<string, DecisionState>): { ok: boolean | null; mine?: boolean; wait?: string; ended?: boolean } {
   switch (b.kind) {
     case 'who':
       return { ok: b.genesis === me, mine: b.genesis === me };
     case 'before':
-      return { ok: now < b.time, wait: now < b.time ? undefined : `ended ${fmtTime(b.time)}` };
+      return { ok: now < b.time, wait: now < b.time ? undefined : t('ended {time}', { time: fmtTime(b.time) }), ended: true };
     case 'from':
-      return { ok: now >= b.time, wait: now >= b.time ? undefined : `from ${fmtTime(b.time)}` };
+      return { ok: now >= b.time, wait: now >= b.time ? undefined : t('from {time}', { time: fmtTime(b.time) }) };
     case 'decision': {
       const d = decisions.get(decisionKey(b.arbiter, b.id));
       const ok = !!d?.exists && d.owner === b.arbiter && d.value === b.value;
-      return { ok, wait: ok ? undefined : b.value === 1 ? 'the arbiter to release' : 'the arbiter to refund' };
+      return { ok, wait: ok ? undefined : b.value === 1 ? t('the arbiter to release') : t('the arbiter to refund') };
     }
     case 'secret':
       //checked in contractStatus: needs the code from the sender
@@ -49,6 +50,8 @@ export function contractStatus(c: ChainContract, me: string, now: number, decisi
   const ways = c.condition ? toWays(c.condition, decisionIds(escrowIds)) : [];
   const canReceive = c.sender === me || myAccounts.has(c.to);
   const missing = ways.flat().some((b) => (b.kind === 'decision' && decisions.get(decisionKey(b.arbiter, b.id))?.exists === false) || (b.kind === 'secret' && codeBoxes.get(b.genesis) === false));
+  //texts of ways that have ended for good, kept apart so the filter below works in every language
+  const ended = new Set<string>();
   const checks: WayCheck[] = ways.map((way) => {
     const hasWho = way.some((b) => b.kind === 'who');
     const codeWho = way.some((b) => b.kind === 'code' && /caller\.genesis/.test(b.text));
@@ -64,6 +67,9 @@ export function contractStatus(c: ChainContract, me: string, now: number, decisi
         ready = 'no';
         if (r.wait) {
           waiting.push(r.wait);
+          if (r.ended) {
+            ended.add(r.wait);
+          }
         }
       } else if (r.ok === null && ready === 'yes') {
         ready = 'maybe';
@@ -75,7 +81,9 @@ export function contractStatus(c: ChainContract, me: string, now: number, decisi
     }
     if (missing) {
       ready = 'no';
-      waiting.push('ended: a register it reads is missing, so the chain refuses every claim');
+      const why = t('ended: a register it reads is missing, so the chain refuses every claim');
+      waiting.push(why);
+      ended.add(why);
     }
     return { way, mine: mine && canReceive, ready, waiting, needsCode: !!secret && secret.genesis === me };
   });
@@ -87,7 +95,7 @@ export function contractStatus(c: ChainContract, me: string, now: number, decisi
     needsCode: !closed && minez.some((w) => w.ready === 'yes' && w.needsCode),
     maybe: !closed && minez.some((w) => w.ready === 'maybe'),
     //a way that has ended for good ("ended ...") is not something to wait for
-    waiting: minez.flatMap((w) => w.waiting).filter((x) => !x.startsWith('ended')),
+    waiting: minez.flatMap((w) => w.waiting).filter((x) => !ended.has(x)),
     closed,
     broken: missing,
   };

@@ -3,8 +3,10 @@ import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import { contractsForEscrows, createDecision, decisionState, myEscrowIds, nameFeeOn, reloadAccounts, setDecision, type ChainContract, type DecisionState, type Session } from '../lib/chain';
 import { fmtTime } from '../lib/status';
 import { copyText, errorText, formatAmount } from './common';
+import { t } from '../lib/i18n';
 
-const valueNames: Record<number, string> = { 0: 'open', 1: 'released to the recipient', 2: 'refunded to the sender' };
+//a function, so the texts follow the language set at start
+const valueNames = (): Record<number, string> => ({ 0: t('open'), 1: t('released to the recipient'), 2: t('refunded to the sender') });
 
 export function Arbiter({ node, session, active }: { node: NexusNode; session: Session; active: boolean }) {
   const [items, setItems] = useState<{ id: string; d: DecisionState }[]>([]);
@@ -38,12 +40,12 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
     setMsg({});
     try {
       const tx = await fn();
-      setMsg({ ok: `Sent (transaction ${tx.slice(0, 8)}...), waiting for the next block...` });
+      setMsg({ ok: t('Sent (transaction {tx}...), waiting for the next block...', { tx: tx.slice(0, 8) }) });
       const inBlock = await node.waitConfirmed(tx, 1, 180000).then(
         () => true,
         () => false,
       );
-      setMsg(inBlock ? { ok } : { ok: `Sent, not in a block yet: refresh in a while. ${ok}` });
+      setMsg(inBlock ? { ok } : { ok: t('Sent, not in a block yet: refresh in a while. {message}', { message: ok }) });
       setBusy('');
       after?.();
       await reloadAccounts(node, session).catch(() => undefined);
@@ -65,6 +67,7 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
   const newest = [...items].reverse();
   const openOnes = newest.filter((i) => !isDone(i.id));
   const finished = newest.filter((i) => isDone(i.id));
+  const values = valueNames();
 
   //a plain function, not a component: a component made inside would mount anew on every render
   const escrowRow = (id: string, d: DecisionState, done = false) => (
@@ -73,21 +76,21 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
                 <div>
                   <b>{id}</b>{' '}
                   <button className="link" style={{ fontSize: 12 }} onClick={() => copyText(id)}>
-                    copy
+                    {t('copy')}
                   </button>
-                  <div className="meta">{d.exists ? (d.value !== undefined && d.value in valueNames ? valueNames[d.value] : 'unknown value') : 'not found'}</div>
+                  <div className="meta">{d.exists ? (d.value !== undefined && d.value in values ? values[d.value] : t('unknown value')) : t('not found')}</div>
                   <Payments list={uses.get(id)} />
                 </div>
                 <div className="row" hidden={done}>
-                  <button disabled={!!busy || d.value === 1} onClick={() => run(`r${id}`, () => setDecision(node, session, id, 1), `Escrow "${id}": released. The recipient can claim now.`)}>
-                    {busy === `r${id}` ? 'Saving...' : 'Release'}
+                  <button disabled={!!busy || d.value === 1} onClick={() => run(`r${id}`, () => setDecision(node, session, id, 1), t('Escrow "{id}": released. The recipient can claim now.', { id }))}>
+                    {busy === `r${id}` ? t('Saving...') : t('Release')}
                   </button>
-                  <button disabled={!!busy || d.value === 2} onClick={() => run(`f${id}`, () => setDecision(node, session, id, 2), `Escrow "${id}": refunded. The sender can take it back now.`)}>
-                    {busy === `f${id}` ? 'Saving...' : 'Refund'}
+                  <button disabled={!!busy || d.value === 2} onClick={() => run(`f${id}`, () => setDecision(node, session, id, 2), t('Escrow "{id}": refunded. The sender can take it back now.', { id }))}>
+                    {busy === `f${id}` ? t('Saving...') : t('Refund')}
                   </button>
                   {d.value !== 0 && (
-                    <button className="small" disabled={!!busy} onClick={() => run(`o${id}`, () => setDecision(node, session, id, 0), `Escrow "${id}" is open again.`)}>
-                      Reopen
+                    <button className="small" disabled={!!busy} onClick={() => run(`o${id}`, () => setDecision(node, session, id, 0), t('Escrow "{id}" is open again.', { id }))}>
+                      {t('Reopen')}
                     </button>
                   )}
                 </div>
@@ -98,46 +101,45 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
   return (
     <div className="stack">
       <section className="card">
-        <h2>New escrow id</h2>
+        <h2>{t('New escrow id')}</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          When two people ask you to be their arbiter, create an id here and give it to the sender with your username. The sender uses it in the Escrow template. Later you decide: release (the recipient can claim) or refund (the sender
-          can take it back). You never hold the payment and cannot take it.
+          {t('When two people ask you to be their arbiter, create an id here and give it to the sender with your username. The sender uses it in the Escrow template. Later you decide: release (the recipient can claim) or refund (the sender can take it back). You never hold the payment and cannot take it.')}
         </p>
         <div className="row">
-          <input value={newId} onChange={(e) => setNewId(e.target.value.toLowerCase().trim())} placeholder="e.g. order42" spellCheck={false} style={{ width: 200 }} />
-          <button onClick={suggest}>Suggest one</button>
-          <button className="primary" disabled={!validId || taken || !!busy} onClick={() => run('create', () => createDecision(node, session, newId), `Escrow "${newId}" is ready. Give the sender your username "${session.username}" and the id "${newId}".`, () => setNewId(''))}>
-            {busy === 'create' ? 'Creating...' : 'Create'}
+          <input value={newId} onChange={(e) => setNewId(e.target.value.toLowerCase().trim())} placeholder={t('e.g. order42')} spellCheck={false} style={{ width: 200 }} />
+          <button onClick={suggest}>{t('Suggest one')}</button>
+          <button className="primary" disabled={!validId || taken || !!busy} onClick={() => run('create', () => createDecision(node, session, newId), t('Escrow "{id}" is ready. Give the sender your username "{username}" and the id "{id}".', { id: newId, username: session.username }), () => setNewId(''))}>
+            {busy === 'create' ? t('Creating...') : t('Create')}
           </button>
-          {fee > 0n && <span className="muted">costs {formatAmount(fee, 6)} NXS (a name)</span>}
+          {fee > 0n && <span className="muted">{t('costs {amount} NXS (a name)', { amount: formatAmount(fee, 6) })}</span>}
         </div>
-        {newId && !validId && <p className="bad">4 to 32 lower case letters or digits</p>}
-        {taken && <p className="bad">You already have this id</p>}
+        {newId && !validId && <p className="bad">{t('4 to 32 lower case letters or digits')}</p>}
+        {taken && <p className="bad">{t('You already have this id')}</p>}
         {msg.ok && <div className="note good spaced">{msg.ok}</div>}
         {msg.error && <div className="note bad spaced">{msg.error}</div>}
       </section>
 
       <section className="card">
         <h2 className="row">
-          Your escrows
+          {t('Your escrows')}
           <button className="small" onClick={load} disabled={loading}>
-            {loading ? 'Loading...' : 'Refresh'}
+            {loading ? t('Loading...') : t('Refresh')}
           </button>
         </h2>
-        {items.length === 0 && !loading && <p className="muted">None yet.</p>}
+        {items.length === 0 && !loading && <p className="muted">{t('None yet.')}</p>}
         <div className="list">
           {openOnes.map(({ id, d }) => escrowRow(id, d))}
         </div>
         {finished.length > 0 && (
           <details className="spaced">
-            <summary className="muted">Finished: the payment was claimed ({finished.length})</summary>
+            <summary className="muted">{t('Finished: the payment was claimed ({n})', { n: finished.length })}</summary>
             <div className="list spaced">
               {finished.map(({ id, d }) => escrowRow(id, d, true))}
             </div>
           </details>
         )}
         <p className="muted spaced" style={{ fontSize: 12 }}>
-          A decision can be changed until someone claims; after a claim the payment has moved and the decision no longer matters. Use one id per deal.
+          {t('A decision can be changed until someone claims; after a claim the payment has moved and the decision no longer matters. Use one id per deal.')}
         </p>
       </section>
     </div>
@@ -147,13 +149,15 @@ export function Arbiter({ node, session, active }: { node: NexusNode; session: S
 //the payments that wait on this escrow: decide only once the payment is there
 function Payments({ list }: { list?: ChainContract[] }) {
   if (!list?.length) {
-    return <div className="meta">No payment using this id in the recent blocks yet. Wait for the sender before you decide.</div>;
+    return <div className="meta">{t('No payment using this id in the recent blocks yet. Wait for the sender before you decide.')}</div>;
   }
   return (
     <div className="meta">
       {list.map((c) => (
         <div key={`${c.txid}/${c.contract}`}>
-          {formatAmount(c.amount, c.decimals)} {c.ticker} locked {fmtTime(c.time)}: {c.open > 0n ? 'waiting for the claim' : 'already claimed'}
+          {c.open > 0n
+            ? t('{amount} {ticker} locked {time}: waiting for the claim', { amount: formatAmount(c.amount, c.decimals), ticker: c.ticker, time: fmtTime(c.time) })
+            : t('{amount} {ticker} locked {time}: already claimed', { amount: formatAmount(c.amount, c.decimals), ticker: c.ticker, time: fmtTime(c.time) })}
         </div>
       ))}
     </div>

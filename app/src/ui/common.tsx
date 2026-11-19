@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import { findPerson, type Person, type Session } from '../lib/chain';
+import { intlLocale, t } from '../lib/i18n';
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export const shortId = (s: string) => (s.length > 16 ? `${s.slice(0, 6)}...${s.slice(-6)}` : s);
@@ -73,11 +74,11 @@ export function PersonInput(props: { node: NexusNode; session: Session; value: s
   }, [props.value]);
 
   const check = async () => {
-    const t = text.trim();
-    if (t === checked.current && !state.error) {
+    const q = text.trim();
+    if (q === checked.current && !state.error) {
       return;
     }
-    if (!t) {
+    if (!q) {
       checked.current = '';
       setState({});
       props.onPerson(null, '');
@@ -85,18 +86,18 @@ export function PersonInput(props: { node: NexusNode; session: Session; value: s
     }
     setState({ busy: true });
     try {
-      const p = await findPerson(props.node, props.session, t);
+      const p = await findPerson(props.node, props.session, q);
       const me = p.genesis === props.session.genesis;
-      checked.current = t;
-      setState({ ok: me ? 'you' : p.username ? `${p.username}` : `user ${shortId(p.genesis)}` });
-      props.onPerson(p, t);
+      checked.current = q;
+      setState({ ok: me ? t('you') : p.username ? `${p.username}` : t('user {id}', { id: shortId(p.genesis) }) });
+      props.onPerson(p, q);
     } catch (e) {
       //only "no such user" clears the person; a node hiccup keeps what was there
       const notFound = /No account|username/i.test(errorText(e));
-      setState({ error: notFound ? errorText(e) : `Could not check now: ${errorText(e)}` });
+      setState({ error: notFound ? errorText(e) : t('Could not check now: {error}', { error: errorText(e) }) });
       if (notFound) {
-        checked.current = t;
-        props.onPerson(null, t);
+        checked.current = q;
+        props.onPerson(null, q);
       }
     }
   };
@@ -106,18 +107,20 @@ export function PersonInput(props: { node: NexusNode; session: Session; value: s
       <input
         className={props.className ?? 'wide'}
         value={text}
-        placeholder={props.placeholder ?? 'username or genesis id'}
+        placeholder={props.placeholder ?? t('username or genesis id')}
         onChange={(e) => setText(e.target.value)}
         onBlur={check}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
         spellCheck={false}
       />
-      {state.busy && <span className="muted">checking...</span>}
-      {state.ok && <span className="ok">found: {state.ok}</span>}
+      {state.busy && <span className="muted">{t('checking...')}</span>}
+      {state.ok && <span className="ok">{t('found: {name}', { name: state.ok })}</span>}
       {state.error && <span className="bad">{state.error}</span>}
     </span>
   );
 }
+
+const decimalSeparator = () => new Intl.NumberFormat(intlLocale()).formatToParts(1.5).find((p) => p.type === 'decimal')?.value ?? '.';
 
 export function formatAmount(v: bigint, decimals: number): string {
   const neg = v < 0n;
@@ -125,11 +128,13 @@ export function formatAmount(v: bigint, decimals: number): string {
   const unit = 10n ** BigInt(decimals);
   const whole = a / unit;
   const frac = (a % unit).toString().padStart(decimals, '0').replace(/0+$/, '');
-  return `${neg ? '-' : ''}${whole.toLocaleString()}${frac ? `.${frac}` : ''}`;
+  return `${neg ? '-' : ''}${whole.toLocaleString(intlLocale())}${frac ? `${decimalSeparator()}${frac}` : ''}`;
 }
 
+//"1.5" and "1,5" both mean one and a half; a comma with a dot too is a thousands separator ("1,000.5")
 export function parseAmount(text: string, decimals: number): bigint | null {
-  const t = text.trim().replace(/,/g, '');
+  let t = text.trim().replace(/\s/g, '');
+  t = t.includes('.') ? t.replace(/,/g, '') : t.replace(',', '.');
   if (!/^\d+(\.\d+)?$/.test(t)) {
     return null;
   }

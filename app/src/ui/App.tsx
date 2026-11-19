@@ -2,6 +2,7 @@ import { Component, useCallback, useEffect, useMemo, useState, type ReactNode } 
 import { publishOverview } from '../lib/overview';
 import { routeLinksOutside } from '../../../../dex/app/src/lib/module';
 import { makeNode, signIn, type Session } from '../lib/chain';
+import { t } from '../lib/i18n';
 import { NewContract } from './NewContract';
 import { MyContracts } from './MyContracts';
 import { Arbiter } from './Arbiter';
@@ -18,7 +19,7 @@ export function App() {
 
   const onWaiting = useCallback((n: number) => {
     setWaiting(n);
-    publishOverview(n, 'contract payments are ready for you to claim');
+    publishOverview(n, t('contract payments are ready for you to claim'));
   }, []);
 
   if (!session) {
@@ -28,26 +29,26 @@ export function App() {
   return (
     <div className="app">
       <div className="top">
-        <h1>Nexus Contracts</h1>
-        <span className={`badge ${test ? 'test' : ''}`}>{session.net.private ? 'private chain' : session.net.testnet ? 'testnet' : 'mainnet'}</span>
+        <h1>{t('Nexus Contracts')}</h1>
+        <span className={`badge ${test ? 'test' : ''}`}>{session.net.private ? t('private chain') : session.net.testnet ? t('testnet') : t('mainnet')}</span>
         <div className="who">
           <span>
-            Signed in as <b>{session.username}</b>
+            {t('Signed in as')} <b>{session.username}</b>
           </span>
           <button className="small" onClick={() => setSession(null)}>
-            Sign out
+            {t('Sign out')}
           </button>
         </div>
       </div>
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'new'} className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>
-          New contract
+          {t('New contract')}
         </button>
         <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>
-          My contracts{waiting > 0 && <span className="count">{waiting}</span>}
+          {t('My contracts')}{waiting > 0 && <span className="count">{waiting}</span>}
         </button>
         <button role="tab" aria-selected={tab === 'arbiter'} className={tab === 'arbiter' ? 'on' : ''} onClick={() => setTab('arbiter')}>
-          Arbiter
+          {t('Arbiter')}
         </button>
       </div>
       {/* kept mounted so a half-built contract survives a look at another tab */}
@@ -92,28 +93,28 @@ function SignIn({ node, onIn }: { node: ReturnType<typeof makeNode>; onIn: (s: S
 
   return (
     <form className="card signin" onSubmit={go}>
-      <h2>Nexus Contracts</h2>
-      <p className="muted">Lock a payment with your own rules: escrow, a time-lock or a payment that comes back if nobody claims it.</p>
+      <h2>{t('Nexus Contracts')}</h2>
+      <p className="muted">{t('Lock a payment with your own rules: escrow, a time-lock or a payment that comes back if nobody claims it.')}</p>
       <label className="field">
-        <span>Username</span>
+        <span>{t('Username')}</span>
         <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus />
       </label>
       <label className="field">
-        <span>Password</span>
+        <span>{t('Password')}</span>
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
       </label>
       <label className="field">
-        <span>PIN</span>
+        <span>{t('PIN')}</span>
         <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} />
       </label>
       {error && <div className="note bad">{error}</div>}
       <div className="row spaced">
         <button className="primary" disabled={busy || !username || !password || !pin}>
-          {busy ? 'Checking...' : 'Sign in'}
+          {busy ? t('Checking...') : t('Sign in')}
         </button>
       </div>
       <p className="muted spaced" style={{ fontSize: 12 }}>
-        Contracts are signed here, in this module, because the wallet's core can only add an expiry to a payment. Your password and PIN stay in memory until you sign out or close the module.
+        {t("Contracts are signed here, in this module, because the wallet's core can only add an expiry to a payment. Your password and PIN stay in memory until you sign out or close the module.")}
       </p>
     </form>
   );
@@ -129,9 +130,9 @@ class Guard extends Component<{ children: ReactNode }, { error: string | null }>
     if (this.state.error) {
       return (
         <div className="note bad">
-          Something went wrong here: {this.state.error}{' '}
+          {t('Something went wrong here: {error}', { error: this.state.error })}{' '}
           <button className="small" onClick={() => this.setState({ error: null })}>
-            Try again
+            {t('Try again')}
           </button>
         </div>
       );

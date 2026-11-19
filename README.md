@@ -34,6 +34,20 @@ It reuses the transaction code of the browser wallet (`../wallet/src/lib`) and t
   - console errors and plain words.
 - `NEXUS_NODE=http://127.0.0.1:7080 npx vitest run src/live.int.test.ts src/live-code.int.test.ts` (private chain, about 4 minutes): each template on chain. Allowed claims are accepted; the others are refused by the core with "conditions not satisfied".
 
+## Translations
+
+The module speaks the wallet's language (the same 17 languages plus English). Texts go through `t('English text', { placeholder })` (`app/src/lib/i18n.ts`); `app/src/locales/<code>.json` maps each English text to its translation, and a missing entry shows English.
+
+- `node tools/i18n.mjs keys` collects every text into `tools/i18n-keys.json`.
+- `node tools/i18n.mjs check` lists missing texts, wrong placeholders and banned characters per language.
+- `node tools/i18n.mjs prune` drops texts the code no longer uses.
+
+The plain-words sentences are built from phrases (`{who} can claim {conditions}`, `before {time}` ...); `core/src/describe-langs.test.ts` prints them per language (`SHOW_LANG=hr`).
+
+## Sharing and the wallet's Overview
+
+"Share with the recipient" copies a message with `nexus-contract:<transaction id>`; the recipient pastes the whole message into My contracts > Add. The number of payments waiting for you is saved in the module storage (`overview`), which the wallet's Overview shows with an Open link (wallet branch release-fixes).
+
 ## Build
 
 ```
