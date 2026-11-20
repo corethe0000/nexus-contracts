@@ -267,6 +267,7 @@
  "Your money comes back if the goal is not confirmed by",
  "a number",
  "a time",
+ "a ~{fee} NXS network fee applies",
  "add an empty way",
  "add at least one way to claim",
  "after {time}",

@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Ikke signert: passord og PIN-kode ble ikke oppgitt",
  "Opening your contracts...": "Åpner kontraktene dine...",
  "Password and PIN needed": "Passord og PIN-kode trengs",
- "Sign": "Signer"
+ "Sign": "Signer",
+ "a ~{fee} NXS network fee applies": "Det påløper et nettverksgebyr på ~{fee} NXS"
 }

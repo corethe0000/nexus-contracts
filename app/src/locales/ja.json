@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "署名されていません: パスワードとPINが入力されませんでした",
  "Opening your contracts...": "コントラクトを開いています...",
  "Password and PIN needed": "パスワードとPINが必要です",
- "Sign": "署名"
+ "Sign": "署名",
+ "a ~{fee} NXS network fee applies": "~{fee} NXSのネットワーク手数料がかかります"
 }

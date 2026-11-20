@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Не подписано: пароль и PIN не введены",
  "Opening your contracts...": "Открываем ваши контракты...",
  "Password and PIN needed": "Нужны пароль и PIN",
- "Sign": "Подписать"
+ "Sign": "Подписать",
+ "a ~{fee} NXS network fee applies": "Взимается сетевая комиссия ~{fee} NXS"
 }

@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Ei allekirjoitettu: salasanaa ja PIN-koodia ei syötetty",
  "Opening your contracts...": "Avataan sopimuksiasi...",
  "Password and PIN needed": "Salasana ja PIN-koodi tarvitaan",
- "Sign": "Allekirjoita"
+ "Sign": "Allekirjoita",
+ "a ~{fee} NXS network fee applies": "Peritään ~{fee} NXS:n verkkomaksu"
 }

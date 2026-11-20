@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "لم يتم التوقيع: لم يتم إدخال كلمة المرور ورمز PIN",
  "Opening your contracts...": "جارٍ فتح عقودك...",
  "Password and PIN needed": "مطلوب كلمة المرور ورمز PIN",
- "Sign": "توقيع"
+ "Sign": "توقيع",
+ "a ~{fee} NXS network fee applies": "تُطبَّق رسوم شبكة ~{fee} NXS"
 }

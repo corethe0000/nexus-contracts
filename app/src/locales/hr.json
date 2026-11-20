@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Nije potpisano: lozinka i PIN nisu uneseni",
  "Opening your contracts...": "Otvaranje tvojih ugovora...",
  "Password and PIN needed": "Potrebni su lozinka i PIN",
- "Sign": "Potpiši"
+ "Sign": "Potpiši",
+ "a ~{fee} NXS network fee applies": "Primjenjuje se mrežna naknada od ~{fee} NXS"
 }

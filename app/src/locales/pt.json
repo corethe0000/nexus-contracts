@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Não assinado: a senha e o PIN não foram informados",
  "Opening your contracts...": "Abrindo seus contratos...",
  "Password and PIN needed": "Senha e PIN necessários",
- "Sign": "Assinar"
+ "Sign": "Assinar",
+ "a ~{fee} NXS network fee applies": "Aplica-se uma taxa de rede de ~{fee} NXS"
 }

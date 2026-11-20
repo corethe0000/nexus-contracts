@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "서명되지 않음: 비밀번호와 PIN을 입력하지 않았습니다",
  "Opening your contracts...": "계약을 여는 중...",
  "Password and PIN needed": "비밀번호와 PIN 필요",
- "Sign": "서명"
+ "Sign": "서명",
+ "a ~{fee} NXS network fee applies": "~{fee} NXS의 네트워크 수수료가 적용됩니다"
 }

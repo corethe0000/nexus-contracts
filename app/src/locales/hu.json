@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Nincs aláírva: a jelszó és a PIN-kód nem lett megadva",
  "Opening your contracts...": "Szerződései megnyitása...",
  "Password and PIN needed": "Jelszó és PIN-kód szükséges",
- "Sign": "Aláírás"
+ "Sign": "Aláírás",
+ "a ~{fee} NXS network fee applies": "~{fee} NXS hálózati díj kerül felszámításra"
 }

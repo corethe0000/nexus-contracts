@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Nesemnat: parola și PIN-ul nu au fost introduse",
  "Opening your contracts...": "Se deschid contractele dvs...",
  "Password and PIN needed": "Sunt necesare parola și PIN-ul",
- "Sign": "Semnați"
+ "Sign": "Semnați",
+ "a ~{fee} NXS network fee applies": "Se aplică o taxă de rețea de ~{fee} NXS"
 }

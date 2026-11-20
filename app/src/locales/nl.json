@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "Niet ondertekend: wachtwoord en pincode zijn niet ingevoerd",
  "Opening your contracts...": "Je contracten openen...",
  "Password and PIN needed": "Wachtwoord en pincode nodig",
- "Sign": "Ondertekenen"
+ "Sign": "Ondertekenen",
+ "a ~{fee} NXS network fee applies": "Er gelden netwerkkosten van ~{fee} NXS"
 }

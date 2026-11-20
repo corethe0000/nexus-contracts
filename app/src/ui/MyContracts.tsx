@@ -3,7 +3,7 @@ import { codeHash, describe, print, toWays } from '@nexus-contracts/core/src';
 import { savedCodes } from '../lib/codes';
 import { shareText, txidFrom } from '../lib/share';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
-import { blockTime, claim, claimWithCode, codeBoxState, createCodeBox, decisionState, discoverEscrows, incomingContracts, readContracts, reloadAccounts, sentContracts, type ChainContract, type DecisionState, type Session } from '../lib/chain';
+import { blockTime, claim, claimWithCode, codeBoxState, createCodeBox, decisionState, discoverEscrows, feeForCondition, incomingContracts, readContracts, reloadAccounts, sentContracts, type ChainContract, type DecisionState, type Session } from '../lib/chain';
 import { contractStatus, decisionKey, escrowRefs, fmtTime, type ContractStatus } from '../lib/status';
 import { copyText, errorText, formatAmount, shortId } from './common';
 import { t } from '../lib/i18n';
@@ -378,6 +378,11 @@ function ContractRow({ r, session, acting, result, onAct, codes, codeFor, setCod
             </button>
           )}
           {!status.closed && !status.broken && !status.canClaim && !status.needsCode && !status.maybe && <span className={`pill ${status.waiting.length ? 'wait' : 'done'}`}>{status.waiting.length ? t('waiting: {list}', { list: [...new Set(status.waiting)].join(', ') }) : iAmSender ? t('for the recipient') : t('not for you')}</span>}
+          {!status.closed && (status.canClaim || status.needsCode || status.maybe) && feeForCondition(session.net, c.condition) > 0n && (
+            <span className="muted" style={{ fontSize: 12 }}>
+              {t('a ~{fee} NXS network fee applies', { fee: formatAmount(feeForCondition(session.net, c.condition), 6) })}
+            </span>
+          )}
         </div>
       </div>
       {codeFor === key && (

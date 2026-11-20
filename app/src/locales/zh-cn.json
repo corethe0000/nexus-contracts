@@ -396,5 +396,6 @@
  "Not signed: password and PIN were not entered": "未签名：未输入密码和 PIN",
  "Opening your contracts...": "正在打开您的合约...",
  "Password and PIN needed": "需要密码和 PIN",
- "Sign": "签名"
+ "Sign": "签名",
+ "a ~{fee} NXS network fee applies": "收取 ~{fee} NXS 的网络费用"
 }
