@@ -386,5 +386,15 @@
  "{who} can claim": "{who}は受け取れます",
  "{who} can claim {conditions}": "{who}は{conditions}受け取れます",
  "{who} can take it back": "{who}は取り戻せます",
- "{who} can take it back {conditions}": "{who}は{conditions}取り戻せます"
+ "{who} can take it back {conditions}": "{who}は{conditions}取り戻せます",
+ "Cancel": "キャンセル",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "コントラクトはこのモジュール内で作成・署名されるため、{user} のパスワードとPINが一度必要です。ロックするかモジュールを閉じるまでメモリ内に保持されます。",
+ "Could not read the user logged in to the wallet": "ウォレットにログインしているユーザーを読み取れませんでした",
+ "Forget the password and PIN; they are asked again for the next signature": "パスワードとPINを消去します。次の署名時に再度入力を求められます",
+ "Lock": "ロック",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "先にウォレットにログインしてください。モジュールはウォレットにログインしているユーザーとして開きます。",
+ "Not signed: password and PIN were not entered": "署名されていません: パスワードとPINが入力されませんでした",
+ "Opening your contracts...": "コントラクトを開いています...",
+ "Password and PIN needed": "パスワードとPINが必要です",
+ "Sign": "署名"
 }

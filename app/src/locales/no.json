@@ -386,5 +386,15 @@
  "{who} can claim": "{who} kan hente",
  "{who} can claim {conditions}": "{who} kan hente {conditions}",
  "{who} can take it back": "{who} kan ta den tilbake",
- "{who} can take it back {conditions}": "{who} kan ta den tilbake {conditions}"
+ "{who} can take it back {conditions}": "{who} kan ta den tilbake {conditions}",
+ "Cancel": "Avbryt",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "Kontrakter lages og signeres i denne modulen, så den trenger passordet og PIN-koden til {user} én gang. De blir i minnet til du låser den eller lukker modulen.",
+ "Could not read the user logged in to the wallet": "Kunne ikke lese brukeren som er logget inn i lommeboken",
+ "Forget the password and PIN; they are asked again for the next signature": "Glem passordet og PIN-koden; de blir spurt om igjen ved neste signering",
+ "Lock": "Lås",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Logg inn i lommeboken først. Modulen åpnes som brukeren som er logget inn i lommeboken.",
+ "Not signed: password and PIN were not entered": "Ikke signert: passord og PIN-kode ble ikke oppgitt",
+ "Opening your contracts...": "Åpner kontraktene dine...",
+ "Password and PIN needed": "Passord og PIN-kode trengs",
+ "Sign": "Signer"
 }

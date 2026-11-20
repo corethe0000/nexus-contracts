@@ -386,5 +386,15 @@
  "{who} can claim": "{who} 可以领取",
  "{who} can claim {conditions}": "{who} {conditions}可以领取",
  "{who} can take it back": "{who} 可以取回",
- "{who} can take it back {conditions}": "{who} {conditions}可以取回"
+ "{who} can take it back {conditions}": "{who} {conditions}可以取回",
+ "Cancel": "取消",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "合约在本模块中创建和签名，因此需要输入一次 {user} 的密码和 PIN。它们保存在内存中，直到您锁定或关闭模块。",
+ "Could not read the user logged in to the wallet": "无法读取已登录钱包的用户",
+ "Forget the password and PIN; they are asked again for the next signature": "清除密码和 PIN；下次签名时会再次要求输入",
+ "Lock": "锁定",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "请先登录您的钱包。模块将以已登录钱包的用户身份打开。",
+ "Not signed: password and PIN were not entered": "未签名：未输入密码和 PIN",
+ "Opening your contracts...": "正在打开您的合约...",
+ "Password and PIN needed": "需要密码和 PIN",
+ "Sign": "签名"
 }

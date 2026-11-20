@@ -386,5 +386,15 @@
  "{who} can claim": "{who} kan de betaling opeisen",
  "{who} can claim {conditions}": "{who} kan de betaling opeisen {conditions}",
  "{who} can take it back": "{who} kan de betaling terugnemen",
- "{who} can take it back {conditions}": "{who} kan de betaling terugnemen {conditions}"
+ "{who} can take it back {conditions}": "{who} kan de betaling terugnemen {conditions}",
+ "Cancel": "Annuleren",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "Contracten worden in deze module gemaakt en ondertekend, dus de module heeft eenmalig het wachtwoord en de pincode van {user} nodig. Ze blijven in het geheugen tot je de module vergrendelt of sluit.",
+ "Could not read the user logged in to the wallet": "Kan de gebruiker die in de wallet is ingelogd niet lezen",
+ "Forget the password and PIN; they are asked again for the next signature": "Wachtwoord en pincode vergeten; ze worden bij de volgende ondertekening opnieuw gevraagd",
+ "Lock": "Vergrendelen",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Log eerst in op je wallet. De module opent als de gebruiker die in de wallet is ingelogd.",
+ "Not signed: password and PIN were not entered": "Niet ondertekend: wachtwoord en pincode zijn niet ingevoerd",
+ "Opening your contracts...": "Je contracten openen...",
+ "Password and PIN needed": "Wachtwoord en pincode nodig",
+ "Sign": "Ondertekenen"
 }

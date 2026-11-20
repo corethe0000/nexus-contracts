@@ -386,5 +386,15 @@
  "{who} can claim": "{who}은(는) 수령할 수 있습니다",
  "{who} can claim {conditions}": "{who}은(는) {conditions} 수령할 수 있습니다",
  "{who} can take it back": "{who}은(는) 회수할 수 있습니다",
- "{who} can take it back {conditions}": "{who}은(는) {conditions} 회수할 수 있습니다"
+ "{who} can take it back {conditions}": "{who}은(는) {conditions} 회수할 수 있습니다",
+ "Cancel": "취소",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "계약은 이 모듈에서 만들고 서명하므로 {user}의 비밀번호와 PIN이 한 번 필요합니다. 잠그거나 모듈을 닫을 때까지 메모리에 보관됩니다.",
+ "Could not read the user logged in to the wallet": "지갑에 로그인한 사용자를 읽을 수 없습니다",
+ "Forget the password and PIN; they are asked again for the next signature": "비밀번호와 PIN을 지웁니다. 다음 서명 때 다시 입력해야 합니다",
+ "Lock": "잠금",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "먼저 지갑에 로그인하세요. 모듈은 지갑에 로그인한 사용자로 열립니다.",
+ "Not signed: password and PIN were not entered": "서명되지 않음: 비밀번호와 PIN을 입력하지 않았습니다",
+ "Opening your contracts...": "계약을 여는 중...",
+ "Password and PIN needed": "비밀번호와 PIN 필요",
+ "Sign": "서명"
 }

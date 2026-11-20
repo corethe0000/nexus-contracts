@@ -386,5 +386,15 @@
  "{who} can claim": "{who} pode resgatar",
  "{who} can claim {conditions}": "{who} pode resgatar {conditions}",
  "{who} can take it back": "{who} pode recuperar",
- "{who} can take it back {conditions}": "{who} pode recuperar {conditions}"
+ "{who} can take it back {conditions}": "{who} pode recuperar {conditions}",
+ "Cancel": "Cancelar",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "Os contratos são criados e assinados neste módulo, por isso ele precisa uma vez da senha e do PIN de {user}. Eles ficam na memória até você bloqueá-lo ou fechar o módulo.",
+ "Could not read the user logged in to the wallet": "Não foi possível ler o usuário conectado à carteira",
+ "Forget the password and PIN; they are asked again for the next signature": "Esquecer a senha e o PIN; eles serão pedidos novamente na próxima assinatura",
+ "Lock": "Bloquear",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Entre primeiro na sua carteira. O módulo abre com o usuário conectado à carteira.",
+ "Not signed: password and PIN were not entered": "Não assinado: a senha e o PIN não foram informados",
+ "Opening your contracts...": "Abrindo seus contratos...",
+ "Password and PIN needed": "Senha e PIN necessários",
+ "Sign": "Assinar"
 }

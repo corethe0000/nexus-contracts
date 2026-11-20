@@ -386,5 +386,15 @@
  "{who} can claim": "Может получить: {who}",
  "{who} can claim {conditions}": "Может получить: {who}, {conditions}",
  "{who} can take it back": "Может вернуть себе: {who}",
- "{who} can take it back {conditions}": "Может вернуть себе: {who}, {conditions}"
+ "{who} can take it back {conditions}": "Может вернуть себе: {who}, {conditions}",
+ "Cancel": "Отмена",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "Контракты создаются и подписываются в этом модуле, поэтому ему один раз нужны пароль и PIN пользователя {user}. Они хранятся в памяти, пока вы не заблокируете его или не закроете модуль.",
+ "Could not read the user logged in to the wallet": "Не удалось прочитать пользователя, вошедшего в кошелёк",
+ "Forget the password and PIN; they are asked again for the next signature": "Забыть пароль и PIN; они будут запрошены снова при следующей подписи",
+ "Lock": "Заблокировать",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Сначала войдите в кошелёк. Модуль открывается от имени пользователя, вошедшего в кошелёк.",
+ "Not signed: password and PIN were not entered": "Не подписано: пароль и PIN не введены",
+ "Opening your contracts...": "Открываем ваши контракты...",
+ "Password and PIN needed": "Нужны пароль и PIN",
+ "Sign": "Подписать"
 }

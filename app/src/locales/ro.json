@@ -386,5 +386,15 @@
  "{who} can claim": "Poate încasa: {who}",
  "{who} can claim {conditions}": "Poate încasa: {who}, {conditions}",
  "{who} can take it back": "Poate recupera: {who}",
- "{who} can take it back {conditions}": "Poate recupera: {who}, {conditions}"
+ "{who} can take it back {conditions}": "Poate recupera: {who}, {conditions}",
+ "Cancel": "Anulare",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "Contractele sunt create și semnate în acest modul, așa că are nevoie o singură dată de parola și PIN-ul lui {user}. Acestea rămân în memorie până când îl blocați sau închideți modulul.",
+ "Could not read the user logged in to the wallet": "Nu s-a putut citi utilizatorul conectat la portofel",
+ "Forget the password and PIN; they are asked again for the next signature": "Uitați parola și PIN-ul; vor fi cerute din nou la următoarea semnătură",
+ "Lock": "Blocare",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Conectați-vă mai întâi la portofel. Modulul se deschide ca utilizatorul conectat la portofel.",
+ "Not signed: password and PIN were not entered": "Nesemnat: parola și PIN-ul nu au fost introduse",
+ "Opening your contracts...": "Se deschid contractele dvs...",
+ "Password and PIN needed": "Sunt necesare parola și PIN-ul",
+ "Sign": "Semnați"
 }

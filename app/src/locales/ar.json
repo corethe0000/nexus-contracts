@@ -386,5 +386,15 @@
  "{who} can claim": "يمكن أن يستلم {who}",
  "{who} can claim {conditions}": "يمكن أن يستلم {who} {conditions}",
  "{who} can take it back": "يمكن أن يسترد {who} الدفعة",
- "{who} can take it back {conditions}": "يمكن أن يسترد {who} الدفعة {conditions}"
+ "{who} can take it back {conditions}": "يمكن أن يسترد {who} الدفعة {conditions}",
+ "Cancel": "إلغاء",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "تُنشأ العقود وتُوقَّع في هذه الوحدة، لذا تحتاج إلى كلمة المرور ورمز PIN الخاصين بـ {user} مرة واحدة. يبقيان في الذاكرة حتى تقفلها أو تغلق الوحدة.",
+ "Could not read the user logged in to the wallet": "تعذّرت قراءة المستخدم المسجّل الدخول إلى المحفظة",
+ "Forget the password and PIN; they are asked again for the next signature": "نسيان كلمة المرور ورمز PIN؛ سيُطلبان مرة أخرى عند التوقيع التالي",
+ "Lock": "قفل",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "سجّل الدخول إلى محفظتك أولًا. تُفتح الوحدة باسم المستخدم المسجّل الدخول إلى المحفظة.",
+ "Not signed: password and PIN were not entered": "لم يتم التوقيع: لم يتم إدخال كلمة المرور ورمز PIN",
+ "Opening your contracts...": "جارٍ فتح عقودك...",
+ "Password and PIN needed": "مطلوب كلمة المرور ورمز PIN",
+ "Sign": "توقيع"
 }

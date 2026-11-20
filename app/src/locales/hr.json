@@ -386,5 +386,15 @@
  "{who} can claim": "Može preuzeti: {who}",
  "{who} can claim {conditions}": "Može preuzeti: {who}, {conditions}",
  "{who} can take it back": "Može vratiti sebi: {who}",
- "{who} can take it back {conditions}": "Može vratiti sebi: {who}, {conditions}"
+ "{who} can take it back {conditions}": "Može vratiti sebi: {who}, {conditions}",
+ "Cancel": "Odustani",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "Ugovori se izrađuju i potpisuju u ovom modulu, pa mu jednom trebaju lozinka i PIN korisnika {user}. Ostaju u memoriji dok ga ne zaključaš ili ne zatvoriš modul.",
+ "Could not read the user logged in to the wallet": "Nije moguće pročitati korisnika prijavljenog u novčanik",
+ "Forget the password and PIN; they are asked again for the next signature": "Zaboravi lozinku i PIN; ponovno će se tražiti za sljedeći potpis",
+ "Lock": "Zaključaj",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Najprije se prijavi u svoj novčanik. Modul se otvara kao korisnik prijavljen u novčanik.",
+ "Not signed: password and PIN were not entered": "Nije potpisano: lozinka i PIN nisu uneseni",
+ "Opening your contracts...": "Otvaranje tvojih ugovora...",
+ "Password and PIN needed": "Potrebni su lozinka i PIN",
+ "Sign": "Potpiši"
 }

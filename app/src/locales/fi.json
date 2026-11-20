@@ -386,5 +386,15 @@
  "{who} can claim": "Voi lunastaa: {who}",
  "{who} can claim {conditions}": "Voi lunastaa: {who}, {conditions}",
  "{who} can take it back": "Voi ottaa takaisin: {who}",
- "{who} can take it back {conditions}": "Voi ottaa takaisin: {who}, {conditions}"
+ "{who} can take it back {conditions}": "Voi ottaa takaisin: {who}, {conditions}",
+ "Cancel": "Peruuta",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "Sopimukset luodaan ja allekirjoitetaan tässä moduulissa, joten se tarvitsee käyttäjän {user} salasanan ja PIN-koodin kerran. Ne pysyvät muistissa, kunnes lukitset moduulin tai suljet sen.",
+ "Could not read the user logged in to the wallet": "Lompakkoon kirjautunutta käyttäjää ei voitu lukea",
+ "Forget the password and PIN; they are asked again for the next signature": "Unohda salasana ja PIN-koodi; ne kysytään uudelleen seuraavaa allekirjoitusta varten",
+ "Lock": "Lukitse",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Kirjaudu ensin lompakkoosi. Moduuli avautuu lompakkoon kirjautuneena käyttäjänä.",
+ "Not signed: password and PIN were not entered": "Ei allekirjoitettu: salasanaa ja PIN-koodia ei syötetty",
+ "Opening your contracts...": "Avataan sopimuksiasi...",
+ "Password and PIN needed": "Salasana ja PIN-koodi tarvitaan",
+ "Sign": "Allekirjoita"
 }

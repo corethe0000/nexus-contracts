@@ -386,5 +386,15 @@
  "{who} can claim": "{who} felveheti",
  "{who} can claim {conditions}": "{who} felveheti {conditions}",
  "{who} can take it back": "{who} visszaveheti",
- "{who} can take it back {conditions}": "{who} visszaveheti {conditions}"
+ "{who} can take it back {conditions}": "{who} visszaveheti {conditions}",
+ "Cancel": "Mégse",
+ "Contracts are built and signed in this module, so it needs the password and PIN of {user} once. They stay in memory until you lock it or close the module.": "A szerződések ebben a modulban készülnek és itt kell aláírni őket, ezért egyszer szükség van {user} jelszavára és PIN-kódjára. Ezek a memóriában maradnak, amíg le nem zárja vagy be nem zárja a modult.",
+ "Could not read the user logged in to the wallet": "Nem sikerült beolvasni a pénztárcába bejelentkezett felhasználót",
+ "Forget the password and PIN; they are asked again for the next signature": "A jelszó és a PIN-kód elfelejtése; a következő aláíráshoz újra el kell kérni őket",
+ "Lock": "Zárolás",
+ "Log in to your wallet first. The module opens as the user logged in to the wallet.": "Először jelentkezzen be a pénztárcájába. A modul a pénztárcába bejelentkezett felhasználóként nyílik meg.",
+ "Not signed: password and PIN were not entered": "Nincs aláírva: a jelszó és a PIN-kód nem lett megadva",
+ "Opening your contracts...": "Szerződései megnyitása...",
+ "Password and PIN needed": "Jelszó és PIN-kód szükséges",
+ "Sign": "Aláírás"
 }
