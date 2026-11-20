@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NexusNode } from '../../../../dex/core/src/nexus/node';
 import { findPerson, type Person, type Session } from '../lib/chain';
-import { intlLocale, t } from '../lib/i18n';
+import { t } from '../lib/i18n';
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export const shortId = (s: string) => (s.length > 16 ? `${s.slice(0, 6)}...${s.slice(-6)}` : s);
@@ -120,27 +120,4 @@ export function PersonInput(props: { node: NexusNode; session: Session; value: s
   );
 }
 
-const decimalSeparator = () => new Intl.NumberFormat(intlLocale()).formatToParts(1.5).find((p) => p.type === 'decimal')?.value ?? '.';
-
-export function formatAmount(v: bigint, decimals: number): string {
-  const neg = v < 0n;
-  const a = neg ? -v : v;
-  const unit = 10n ** BigInt(decimals);
-  const whole = a / unit;
-  const frac = (a % unit).toString().padStart(decimals, '0').replace(/0+$/, '');
-  return `${neg ? '-' : ''}${whole.toLocaleString(intlLocale())}${frac ? `${decimalSeparator()}${frac}` : ''}`;
-}
-
-//"1.5" and "1,5" both mean one and a half; a comma with a dot too is a thousands separator ("1,000.5")
-export function parseAmount(text: string, decimals: number): bigint | null {
-  let t = text.trim().replace(/\s/g, '');
-  t = t.includes('.') ? t.replace(/,/g, '') : t.replace(',', '.');
-  if (!/^\d+(\.\d+)?$/.test(t)) {
-    return null;
-  }
-  const [w, f = ''] = t.split('.');
-  if (f.length > decimals) {
-    return null;
-  }
-  return BigInt(w!) * 10n ** BigInt(decimals) + BigInt(f.padEnd(decimals, '0') || '0');
-}
+export { formatAmount, parseAmount } from '../lib/amount';
