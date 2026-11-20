@@ -9,34 +9,13 @@ import { saveCode } from '../lib/codes';
 import { t } from '../lib/i18n';
 import { shareText } from '../lib/share';
 import { fmtTime } from '../lib/status';
+import { nthDate, splitAmount, type Every } from '../lib/parts-math';
 import { copyText, errorText, formatAmount, inDays, parseAmount, shortId, TimeInput } from './common';
 
 export type PartsKind = 'vesting' | 'milestones';
-type Every = 'day' | 'week' | 'month';
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 
-//the n-th date after start: whole calendar months for 'month' (the 31st becomes the month's last day)
-export function nthDate(start: number, every: Every, n: number): number {
-  if (every === 'day') {
-    return start + n * 86400;
-  }
-  if (every === 'week') {
-    return start + n * 7 * 86400;
-  }
-  const d = new Date(start * 1000);
-  const day = d.getDate();
-  const target = new Date(d.getFullYear(), d.getMonth() + n, 1, d.getHours(), d.getMinutes());
-  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-  target.setDate(Math.min(day, last));
-  return Math.floor(target.getTime() / 1000);
-}
-
-//the total split in n parts, the rest of the division on the last one, so the parts add up exactly
-export function splitAmount(total: bigint, n: number): bigint[] {
-  const each = total / BigInt(n);
-  return Array.from({ length: n }, (_, i) => (i === n - 1 ? total - each * BigInt(n - 1) : each));
-}
 
 export function Parts(props: { node: NexusNode; session: Session; kind: PartsKind; recipient: Person | null; labels: Record<string, string>; onSent: () => void }) {
   const { node, session, kind, recipient } = props;
