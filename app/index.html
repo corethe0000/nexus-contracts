@@ -6,7 +6,14 @@
     <title>Nexus Contracts</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- shown until the app renders: the module page can take a few seconds in the wallet -->
+    <div id="root">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:120px 16px;color:#9bb2c5;font:14px system-ui,sans-serif">
+        <div style="width:34px;height:34px;border-radius:50%;border:3px solid rgba(76,184,245,.25);border-top-color:#4cb8f5;animation:boot-spin .9s linear infinite"></div>
+        <div>Nexus Contracts</div>
+      </div>
+      <style>@keyframes boot-spin{to{transform:rotate(360deg)}}html,body{background:#07131d;margin:0}</style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

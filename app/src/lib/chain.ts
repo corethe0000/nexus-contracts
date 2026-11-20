@@ -22,7 +22,9 @@ export function makeNode(): NexusNode {
 export interface Session {
   username: string;
   genesis: string;
-  who: Credentials;
+  //password and PIN, asked the first time something is signed (see setUnlockPrompt)
+  who?: Credentials;
+  auth: string;
   accounts: NexusAccount[];
   net: NexusNet;
   scan?: RegisterScan; //own registers found so far, so later reads only go through what is new
@@ -33,9 +35,45 @@ export async function signIn(node: NexusNode, username: string, password: string
   const net = await network(node);
   const { genesis, auth } = await findGenesis((m, p) => node.call(m, p), name, net.testnet || net.private);
   await checkCredentials(name, password, pin, auth);
-  const s: Session = { username: name, genesis, who: { username: name, password, pin }, accounts: [], net };
+  const s: Session = { username: name, genesis, who: { username: name, password, pin }, auth, accounts: [], net };
   await reloadAccounts(node, s);
   return s;
+}
+
+/** The user logged in to the wallet, by the genesis the wallet passes: everything but signing works without a password */
+export async function signInAs(node: NexusNode, genesis: string): Promise<Session> {
+  const net = await network(node);
+  const status = await node.call<{ session?: { username?: string } }>('profiles/status/master', { genesis });
+  const name = status?.session?.username;
+  if (!name) {
+    throw new Error(t('Could not read the user logged in to the wallet'));
+  }
+  const { auth } = await findGenesis((m, p) => node.call(m, p), name, net.testnet || net.private);
+  const s: Session = { username: name, genesis: genesis.toLowerCase(), auth, accounts: [], net };
+  await reloadAccounts(node, s);
+  return s;
+}
+
+let unlockPrompt: ((s: Session) => Promise<boolean>) | null = null;
+
+/** The UI that asks for password and PIN when something must be signed; it calls unlock and answers true when done */
+export function setUnlockPrompt(prompt: ((s: Session) => Promise<boolean>) | null) {
+  unlockPrompt = prompt;
+}
+
+export async function unlock(s: Session, password: string, pin: string): Promise<void> {
+  await checkCredentials(s.username, password, pin, s.auth);
+  s.who = { username: s.username, password, pin };
+}
+
+async function signer(s: Session): Promise<Credentials> {
+  if (!s.who && unlockPrompt) {
+    await unlockPrompt(s);
+  }
+  if (!s.who) {
+    throw new Error(t('Not signed: password and PIN were not entered'));
+  }
+  return s.who;
 }
 
 export async function reloadAccounts(node: NexusNode, s: Session): Promise<void> {
@@ -83,7 +121,7 @@ async function defaultAccount(node: NexusNode, genesis: string): Promise<string 
 
 export async function sendContract(node: NexusNode, s: Session, p: { from: string; to: string; amount: bigint; condition: Uint8Array }): Promise<string> {
   const state = await node.accountState(p.from);
-  return node.submit(s.who, s.genesis, (ts) => [debitContract({ from: { address: p.from, state }, to: p.to, amount: p.amount, condition: p.condition }, ts)]);
+  return node.submit(await signer(s), s.genesis, (ts) => [debitContract({ from: { address: p.from, state }, to: p.to, amount: p.amount, condition: p.condition }, ts)]);
 }
 
 /** Several payments with their own rules in one transaction (vesting, milestones), each on the balance the last left */
@@ -92,7 +130,7 @@ export async function sendContracts(node: NexusNode, s: Session, p: { from: stri
     throw new Error(t('1 to 50 parts'));
   }
   const first = await node.accountState(p.from);
-  return node.submit(s.who, s.genesis, (ts) => {
+  return node.submit(await signer(s), s.genesis, (ts) => {
     let state = first;
     return p.parts.map((part) => {
       const out = debitContract({ from: { address: p.from, state }, to: p.to, amount: part.amount, condition: part.condition }, ts);
@@ -115,7 +153,7 @@ export async function claim(node: NexusNode, s: Session, c: ChainContract, into:
   }
   const state = await node.accountState(into);
   const payerState = payer && payer !== into ? await node.accountState(payer) : undefined;
-  return node.submit(s.who, s.genesis, (ts) => {
+  return node.submit(await signer(s), s.genesis, (ts) => {
     const list = [creditContract({ debitTxid: c.txid, contract: c.contract, to: { address: into, state }, from: c.from, amount: c.open }, ts)];
     if (payer) {
       //paying from the account that just received: the fee works on its state after the credit
@@ -165,7 +203,7 @@ export async function createDecision(node: NexusNode, s: Session, id: string): P
     throw new Error(t('A decision register costs a 1 NXS name fee: no NXS account has it'));
   }
   const state = payer ? await node.accountState(payer) : undefined;
-  return node.submit(s.who, s.genesis, (ts) => {
+  return node.submit(await signer(s), s.genesis, (ts) => {
     const list = [nameContract(s.genesis, name, new Uint8Array(32), false, ts)];
     if (payer && state) {
       list.push(feeContract(memoryOfAddress(payer), state, fee, ts));
@@ -181,7 +219,7 @@ export async function setDecision(node: NexusNode, s: Session, id: string, value
   }
   const v = new Uint8Array(32);
   v[0] = value;
-  return node.submit(s.who, s.genesis, (ts) => [nameWriteContract(s.genesis, decisionName(id), { created: d.created!, modified: d.modified!, address: d.raw! }, v, ts)]);
+  return node.submit(await signer(s), s.genesis, (ts) => [nameWriteContract(s.genesis, decisionName(id), { created: d.created!, modified: d.modified!, address: d.raw! }, v, ts)]);
 }
 
 //--- contracts on chain ---
@@ -471,7 +509,7 @@ export async function createCodeBox(node: NexusNode, s: Session): Promise<string
     throw new Error(t('The code box is a name: it costs a 1 NXS fee and no NXS account has it'));
   }
   const state = payer ? await node.accountState(payer) : undefined;
-  return node.submit(s.who, s.genesis, (ts) => {
+  return node.submit(await signer(s), s.genesis, (ts) => {
     const list = [nameContract(s.genesis, codeBoxName, new Uint8Array(32), false, ts)];
     if (payer && state) {
       list.push(feeContract(memoryOfAddress(payer), state, fee, ts));
@@ -490,7 +528,7 @@ export async function claimWithCode(node: NexusNode, s: Session, c: ChainContrac
   const same = box.value && box.value.length === secret.length && box.value.every((b, i) => b === secret[i]);
   if (!same) {
     step(t('Writing the code into your code box...'));
-    const w = await node.submit(s.who, s.genesis, (ts) => [nameWriteContract(s.genesis, codeBoxName, { created: box.created!, modified: box.modified!, address: box.value! }, secret, ts)]);
+    const w = await node.submit(await signer(s), s.genesis, (ts) => [nameWriteContract(s.genesis, codeBoxName, { created: box.created!, modified: box.modified!, address: box.value! }, secret, ts)]);
     step(t('Code written, waiting for the next block before claiming...'));
     await node.waitConfirmed(w, 1, 600000);
   }
