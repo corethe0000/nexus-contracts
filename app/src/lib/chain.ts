@@ -9,6 +9,7 @@ import { recentBlocks } from '../../../../wallet/src/lib/blocks';
 import { conditionOf, parseSlot } from '../../../../wallet/src/lib/htlc';
 import { addressOfMemory, creditContract, debitContract, feeContract, hexOfMemory, memoryOfAddress, memoryOfHex, nameContract, nameFee, namedAddress, nameWriteContract, parseTx } from '../../../../wallet/src/lib/tritium';
 import { t } from './i18n';
+import { pickFeePayer } from './fee';
 import { claimFee, codeBoxAddress, codeBoxName, codeSecret, contractKind, decisionAddress, decisionName, decode, type Condition, type ContractKind } from '@nexus-contracts/core/src';
 
 export type { NexusAccount };
@@ -147,11 +148,11 @@ export const claimFeeOn = (net: NexusNet, c: ChainContract) => feeForCondition(n
 
 export async function claim(node: NexusNode, s: Session, c: ChainContract, into: string): Promise<string> {
   const fee = claimFeeOn(s.net, c);
-  const payer = fee > 0n ? nxsPayer(s, fee) : undefined;
+  const state = await node.accountState(into);
+  const payer = pickFeePayer(s.accounts, c.token, into, state.balance, c.open, fee);
   if (fee > 0n && !payer) {
     throw new Error(t('This claim needs a network fee of {fee} NXS and none of your NXS accounts has it', { fee: (Number(fee) / 1e6).toString() }));
   }
-  const state = await node.accountState(into);
   const payerState = payer && payer !== into ? await node.accountState(payer) : undefined;
   return node.submit(await signer(s), s.genesis, (ts) => {
     const list = [creditContract({ debitTxid: c.txid, contract: c.contract, to: { address: into, state }, from: c.from, amount: c.open }, ts)];
