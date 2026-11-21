@@ -338,6 +338,14 @@ export async function sentContracts(node: NexusNode, s: Session, limit = 100): P
 export async function incomingContracts(node: NexusNode, s: Session, known: string[]): Promise<ChainContract[]> {
   const mine = new Set(s.accounts.map((a) => a.address));
   const txids = new Set(known);
+  //the core's own index of debits waiting to be claimed into this profile: covers contracts older than the block
+  //scan below, so an unclaimed one still shows no matter how long ago it was sent
+  const pending = await node.call<any[]>('profiles/notifications/master', { genesis: s.genesis, verbose: 'summary', limit: 100 }).catch(() => []);
+  for (const n of pending ?? []) {
+    if (n?.OP === 'DEBIT' && n.txid && mine.has(addressOf(n.to))) {
+      txids.add(n.txid);
+    }
+  }
   for (const b of await recentBlocks((m, p) => node.call(m, p), node.url).catch(() => [])) {
     for (const tx of b.tx ?? []) {
       if ((tx.contracts ?? []).some((c: any) => hasCondition(c) && mine.has(addressOf(c.to)))) {
