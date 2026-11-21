@@ -201,7 +201,7 @@ export async function createDecision(node: NexusNode, s: Session, id: string): P
   const fee = nameFeeOn(s.net);
   const payer = fee > 0n ? nxsPayer(s, fee) : undefined;
   if (fee > 0n && !payer) {
-    throw new Error(t('A decision register costs a 1 NXS name fee: no NXS account has it'));
+    throw new Error(t('Becoming an arbiter registers a name on chain, which costs 1 NXS. None of your accounts holds 1 NXS to pay it, so top one up to at least 1 NXS first.'));
   }
   const state = payer ? await node.accountState(payer) : undefined;
   return node.submit(await signer(s), s.genesis, (ts) => {
@@ -515,7 +515,7 @@ export async function createCodeBox(node: NexusNode, s: Session): Promise<string
   const fee = nameFeeOn(s.net);
   const payer = fee > 0n ? nxsPayer(s, fee) : undefined;
   if (fee > 0n && !payer) {
-    throw new Error(t('The code box is a name: it costs a 1 NXS fee and no NXS account has it'));
+    throw new Error(t('Setting up a code box registers a name on chain, which costs 1 NXS. None of your accounts holds 1 NXS to pay it, so top one up to at least 1 NXS first.'));
   }
   const state = payer ? await node.accountState(payer) : undefined;
   return node.submit(await signer(s), s.genesis, (ts) => {
