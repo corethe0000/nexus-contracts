@@ -14,7 +14,13 @@ export function App() {
   const node = useMemo(() => makeNode(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [tab, setTab] = useState<Tab>('new');
+  const [picked, setPicked] = useState(false);
   const [waiting, setWaiting] = useState(0);
+  //one place for a tab change the user asked for, so the auto-open below never fights them
+  const choose = useCallback((to: Tab) => {
+    setPicked(true);
+    setTab(to);
+  }, []);
   const wallet = useMemo(() => inWallet(), []);
   const [genesis, setGenesis] = useState(walletGenesis());
   const [openError, setOpenError] = useState('');
@@ -25,6 +31,14 @@ export function App() {
 
   useEffect(() => routeLinksOutside(), []);
   useEffect(() => onWalletGenesis(setGenesis), []);
+
+  //open on My contracts when there is something waiting to claim (e.g. the wallet's "payments to claim" sent the
+  //user here), unless they have already chosen a tab themselves
+  useEffect(() => {
+    if (!picked && waiting > 0 && tab === 'new') {
+      setTab('mine');
+    }
+  }, [picked, waiting, tab]);
 
   //in the wallet the module is the wallet's user and follows its login and logout
   useEffect(() => {
@@ -112,13 +126,13 @@ export function App() {
         </div>
       </div>
       <div className="tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'new'} className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>
+        <button role="tab" aria-selected={tab === 'new'} className={tab === 'new' ? 'on' : ''} onClick={() => choose('new')}>
           {t('New contract')}
         </button>
-        <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>
+        <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'on' : ''} onClick={() => choose('mine')}>
           {t('My contracts')}{waiting > 0 && <span className="count">{waiting}</span>}
         </button>
-        <button role="tab" aria-selected={tab === 'arbiter'} className={tab === 'arbiter' ? 'on' : ''} onClick={() => setTab('arbiter')}>
+        <button role="tab" aria-selected={tab === 'arbiter'} className={tab === 'arbiter' ? 'on' : ''} onClick={() => choose('arbiter')}>
           {t('Arbiter')}
         </button>
       </div>
